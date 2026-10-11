@@ -17,11 +17,12 @@ export type PopoverState = {
 type Props = {
   state: PopoverState;
   onClose: () => void;
+  onAsk: () => void;
 };
 
 const WIDTH = 380;
 
-export default function TranslationPopover({ state, onClose }: Props) {
+export default function TranslationPopover({ state, onClose, onAsk }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -76,6 +77,16 @@ export default function TranslationPopover({ state, onClose }: Props) {
             </div>
           )}
         </>
+      )}
+
+      {state.status !== "loading" && (
+        <button
+          onClick={onAsk}
+          className="mt-4 flex items-center gap-2 text-xs text-muted hover:text-ink"
+        >
+          Bununla ilgili sor
+          <kbd className="border border-rule px-1 font-mono text-[11px]">Ctrl K</kbd>
+        </button>
       )}
     </div>
   );

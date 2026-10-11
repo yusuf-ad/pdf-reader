@@ -5,20 +5,27 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   fileKey,
-  forgetFile,
-  listRecentFiles,
+  addBook,
+  getBook,
+  listBooks,
   loadFile,
-  rememberFile,
-  type RecentFile,
+  removeBook,
+  requestPersistence,
+  updateBook,
+  type Book,
 } from "@/lib/file-store";
-import { usePdfSearch } from "@/lib/pdf-search";
+import { deleteBookAnnotations, INK_COLORS, undo, type Tool } from "@/lib/annotations";
+import type { Reference } from "@/lib/chat";
+import { getPageText, usePdfSearch } from "@/lib/pdf-search";
 import { loadProgress, saveProgress, toggleBookmark, useBookmarks } from "@/lib/reading-state";
-import { extractSelection } from "@/lib/selection";
+import { extractSelection, selectedPdfText } from "@/lib/selection";
 import { makeTextRenderer } from "@/lib/text-highlight";
 import type { Translation } from "@/lib/types";
 import { useSavedWords } from "@/lib/use-saved-words";
-import EmptyState from "./empty-state";
+import ChatModal from "./chat-modal";
 import LeftPanel, { type LeftTab } from "./left-panel";
+import Library from "./library";
+import ResizablePanel from "./resizable-panel";
 import ShortcutsDialog from "./shortcuts-dialog";
 import Toolbar from "./toolbar";
 import TranslationPopover, { type PopoverState } from "./translation-popover";
@@ -41,7 +48,9 @@ export default function Reader() {
   const [rootWidth, setRootWidth] = useState(0);
   const [scale, setScale] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
-  const [recent, setRecent] = useState<RecentFile[]>([]);
+  const [books, setBooks] = useState<Book[]>([]);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [adding, setAdding] = useState(0);
 
   const [leftOpen, setLeftOpen] = useState(false);
   const [leftTab, setLeftTab] = useState<LeftTab>("contents");
@@ -52,6 +61,13 @@ export default function Reader() {
 
   const [dragging, setDragging] = useState(false);
   const [popover, setPopover] = useState<PopoverState | null>(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatReference, setChatReference] = useState<Reference | null>(null);
+  // Uzun seçimlerde (paragraf) çeviri yerine çıkan "Sor" düğmesinin konumu
+  const [askChip, setAskChip] = useState<{ x: number; y: number } | null>(null);
+  // Not alma aracı (kalem, yazı, silgi); null iken normal okuma/seçim
+  const [tool, setTool] = useState<Tool | null>(null);
+  const [inkColor, setInkColor] = useState<string>(INK_COLORS[1]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -63,6 +79,11 @@ export default function Reader() {
   const anchorRef = useRef<{ page: number; offset: number } | null>(null);
   // Dosya açılınca kaldığı sayfaya gitmek için
   const pendingPageRef = useRef<number | null>(null);
+  // Açılan kitabın kitaplığa yazılması (kapak üretmeden önce beklenir)
+  const savingBookRef = useRef<Promise<unknown>>(Promise.resolve());
+  const loadedKeyRef = useRef<string | null>(null);
+  // Son seçilen metin; Ctrl K ile sohbete referans olarak eklenir
+  const lastSelectionRef = useRef<Omit<Reference, "fileName" | "pageText"> | null>(null);
 
   const { words, add, remove, clear } = useSavedWords();
   const key = file ? fileKey(file) : null;
@@ -80,14 +101,15 @@ export default function Reader() {
     setPopover(null);
   }, []);
 
-  const refreshRecent = useCallback(() => {
-    listRecentFiles().then(setRecent).catch(() => {});
+  const refreshBooks = useCallback(() => {
+    listBooks().then(setBooks).catch(() => {});
   }, []);
 
   const openFile = useCallback(
     (f: File | undefined) => {
       if (!f || f.type !== "application/pdf") return;
       closePopover();
+      setLibraryOpen(false);
       setPdf(null);
       setScale(1);
       setCurrentPage(1);
@@ -95,41 +117,83 @@ export default function Reader() {
       pendingPageRef.current = loadProgress(fileKey(f));
       scrollRef.current?.scrollTo({ top: 0 });
       setFile(f);
-      rememberFile(f).then(refreshRecent).catch(() => {});
+      requestPersistence();
+      loadedKeyRef.current = fileKey(f);
+      savingBookRef.current = addBook(f, true).then(refreshBooks).catch(() => {});
     },
-    [closePopover, refreshRecent],
+    [closePopover, refreshBooks],
   );
 
-  const openRecent = useCallback(
+  const openBook = useCallback(
     async (k: string) => {
+      if (k === key) return setLibraryOpen(false);
       const f = await loadFile(k);
       if (f) openFile(f);
-      else refreshRecent();
+      else refreshBooks();
     },
-    [openFile, refreshRecent],
+    [key, openFile, refreshBooks],
   );
 
-  // Sayfa yenilenince son okunan dosyayı geri aç
+  /** Dosyaları kitaplığa ekler; kapak ve sayfa sayısını hazırlar. */
+  const addFiles = useCallback(
+    async (files: File[]) => {
+      const pdfs = files.filter((f) => f.type === "application/pdf");
+      if (!pdfs.length) return;
+      requestPersistence();
+      setAdding((n) => n + pdfs.length);
+      const { describePdf } = await import("@/lib/pdfjs");
+      for (const f of pdfs) {
+        try {
+          const { key: k, hasCover } = await addBook(f);
+          refreshBooks();
+          if (!hasCover) await updateBook(k, await describePdf(f));
+        } catch {
+          // bozuk/şifreli PDF: kapaksız kalır
+        } finally {
+          setAdding((n) => n - 1);
+          refreshBooks();
+        }
+      }
+    },
+    [refreshBooks],
+  );
+
+  // Sayfa yenilenince son okunan kitabı geri aç
   useEffect(() => {
     let active = true;
-    listRecentFiles()
-      .then((list) => {
+    listBooks()
+      .then(async (list) => {
         if (!active) return;
-        setRecent(list);
-        if (list[0]) openRecent(list[0].key);
+        setBooks(list);
+        const last = list.find((b) => b.openedAt);
+        const f = last && (await loadFile(last.key));
+        if (active && f) openFile(f);
       })
       .catch(() => {});
     return () => {
       active = false;
     };
-  }, [openRecent]);
+  }, [openFile]);
 
-  const handleLoad = useCallback(async (doc: PDFDocumentProxy) => {
-    const first = await doc.getPage(1);
-    const { width, height } = first.getViewport({ scale: 1 });
-    setAspect(height / width);
-    setPdf(doc);
-  }, []);
+  const handleLoad = useCallback(
+    async (doc: PDFDocumentProxy) => {
+      const first = await doc.getPage(1);
+      const { width, height } = first.getViewport({ scale: 1 });
+      setAspect(height / width);
+      setPdf(doc);
+
+      // Kitaplık kartı için kapak ve sayfa sayısı (ilk açılışta bir kez)
+      await savingBookRef.current;
+      const k = loadedKeyRef.current;
+      const book = k && (await getBook(k));
+      if (book && (!book.cover || !book.numPages)) {
+        const { renderCover } = await import("@/lib/pdfjs");
+        await updateBook(book.key, { numPages: doc.numPages, cover: await renderCover(doc) });
+        refreshBooks();
+      }
+    },
+    [refreshBooks],
+  );
 
   // --- Gezinme -----------------------------------------------------------
 
@@ -184,13 +248,16 @@ export default function Reader() {
   useEffect(() => {
     const page = pendingPageRef.current;
     if (!pdf || !pageWidth || !page) return;
-    pendingPageRef.current = null;
-    requestAnimationFrame(() => goTo(page));
+    requestAnimationFrame(() => {
+      goTo(page);
+      pendingPageRef.current = null;
+    });
   }, [pdf, pageWidth, goTo]);
 
-  // Okunan sayfayı kaydet
+  // Okunan sayfayı localStorage'a kaydet. Kaldığın sayfaya dönülmeden önce
+  // (henüz 1. sayfadayken) yazıp kayıtlı sayfayı ezmesin.
   useEffect(() => {
-    if (pdf && key) saveProgress(key, currentPage);
+    if (pdf && key && pendingPageRef.current === null) saveProgress(key, currentPage);
   }, [pdf, key, currentPage]);
 
   // Kaydırma alanının genişliğini ölç
@@ -238,6 +305,20 @@ export default function Reader() {
     requestAnimationFrame(() => searchInputRef.current?.select());
   }, []);
 
+  const openChat = useCallback(async () => {
+    const sel = lastSelectionRef.current;
+    closePopover();
+    setAskChip(null);
+    if (sel) {
+      lastSelectionRef.current = null;
+      window.getSelection()?.removeAllRanges();
+      const pageText =
+        pdf && sel.page ? (await getPageText(pdf, sel.page)).slice(0, 6000) : undefined;
+      setChatReference({ ...sel, fileName: file?.name ?? null, pageText });
+    }
+    setChatOpen(true);
+  }, [pdf, file, closePopover]);
+
   const toggleFocusMode = useCallback(() => {
     if (document.fullscreenElement) document.exitFullscreen();
     else document.documentElement.requestFullscreen?.().catch(() => setFocusMode((f) => !f));
@@ -275,6 +356,26 @@ export default function Reader() {
         target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
       const mod = e.ctrlKey || e.metaKey;
 
+      if (mod && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        if (chatOpen) setChatOpen(false);
+        else openChat();
+        return;
+      }
+      // Sohbet açıkken arkadaki okuyucu kısayolları çalışmasın
+      if (chatOpen) return;
+
+      if (!typing && !mod && file && (e.key.toLowerCase() === "l" || (libraryOpen && e.key === "Escape"))) {
+        e.preventDefault();
+        setLibraryOpen((o) => !o);
+        return;
+      }
+      // Kitaplık açıkken okuyucu kısayolları çalışmasın
+      if (libraryOpen || !file) {
+        if (e.key === "?" && !typing) setShowHelp((s) => !s);
+        return;
+      }
+
       if (mod && e.key.toLowerCase() === "f" && file) {
         e.preventDefault();
         openSearch();
@@ -294,6 +395,15 @@ export default function Reader() {
         e.preventDefault();
         setScale(1);
         return;
+      }
+      if (mod && e.key.toLowerCase() === "z" && !e.shiftKey && !typing && key) {
+        e.preventDefault();
+        undo(key);
+        return;
+      }
+      if (e.key === "Escape" && !typing) {
+        setAskChip(null);
+        setTool(null);
       }
       if (typing || mod || e.altKey) return;
 
@@ -315,6 +425,9 @@ export default function Reader() {
         p: fitPage,
         "[": () => setLeftOpen((o) => !o),
         "]": () => setRightOpen((o) => !o),
+        d: () => setTool((t) => (t === "pen" ? null : "pen")),
+        t: () => setTool((t) => (t === "text" ? null : "text")),
+        e: () => setTool((t) => (t === "eraser" ? null : "eraser")),
       };
       const action = actions[e.key.length === 1 ? e.key.toLowerCase() : e.key];
       if (action) {
@@ -324,18 +437,49 @@ export default function Reader() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [file, key, currentPage, numPages, goTo, zoomBy, fitWidth, fitPage, openSearch, toggleFocusMode]);
+  }, [
+    file,
+    key,
+    currentPage,
+    numPages,
+    chatOpen,
+    libraryOpen,
+    goTo,
+    zoomBy,
+    fitWidth,
+    fitPage,
+    openSearch,
+    openChat,
+    toggleFocusMode,
+  ]);
 
   // --- Kelime seçimi ve çeviri -------------------------------------------
 
   const handleMouseUp = async (e: React.MouseEvent) => {
+    // Çizerken / yazarken çeviri açılmasın
+    if (tool) return;
     const { clientX: x, clientY: y } = e;
     // Seçimin tamamlanmasını bekle
     await new Promise((r) => setTimeout(r, 0));
 
     const selection = window.getSelection();
-    const picked = selection && extractSelection(selection);
-    if (!picked) return;
+    if (!selection) return;
+    const picked = extractSelection(selection); // kısa seçimi tam kelimeye genişletir
+    const selected = selectedPdfText(selection);
+    setAskChip(null);
+    if (!selected) {
+      lastSelectionRef.current = null;
+      return;
+    }
+    lastSelectionRef.current = picked
+      ? { text: picked.word, sentence: picked.sentence, page: picked.page }
+      : selected;
+    if (!picked) {
+      // Paragraf gibi uzun seçimler çevrilmez; sohbete sorulabilir
+      closePopover();
+      setAskChip({ x, y });
+      return;
+    }
 
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -407,16 +551,23 @@ export default function Reader() {
         onDrop={(e) => {
           e.preventDefault();
           setDragging(false);
-          openFile(e.dataTransfer.files[0]);
+          const files = [...e.dataTransfer.files];
+          // Okurken tek dosya bırakılırsa aç; birden fazlası kitaplığa eklenir
+          if (files.length === 1) openFile(files[0]);
+          else addFiles(files);
         }}
       >
         <input
           ref={fileInputRef}
           type="file"
           accept="application/pdf"
+          multiple
           className="hidden"
           onChange={(e) => {
-            openFile(e.target.files?.[0]);
+            const files = [...(e.target.files ?? [])];
+            // Kitaplıktan eklenenler yalnızca eklenir; kitaplık boşsa tek dosya doğrudan açılır
+            if (files.length === 1 && (!libraryOpen && (file || books.length === 0))) openFile(files[0]);
+            else addFiles(files);
             e.target.value = "";
           }}
         />
@@ -438,11 +589,21 @@ export default function Reader() {
             onSearch={openSearch}
             onFocusMode={toggleFocusMode}
             onHelp={() => setShowHelp(true)}
-            onOpenFile={() => fileInputRef.current?.click()}
+            onChat={openChat}
+            onLibrary={() => setLibraryOpen(true)}
             leftOpen={leftOpen}
             onToggleLeft={() => setLeftOpen((o) => !o)}
             rightOpen={rightOpen}
             onToggleRight={() => setRightOpen((o) => !o)}
+            tool={tool}
+            onTool={(t) => {
+              setTool(t);
+              closePopover();
+              setAskChip(null);
+            }}
+            color={inkColor}
+            onColor={setInkColor}
+            onUndo={() => key && undo(key)}
           />
         )}
 
@@ -453,20 +614,16 @@ export default function Reader() {
           onMouseUp={handleMouseUp}
           className="relative flex-1 overflow-auto px-8 py-10"
         >
-          {file ? (
+          {file && (
             <PdfViewer
               file={file}
               pageWidth={pageWidth}
               pageHeight={pageHeight}
               textRenderer={textRenderer}
               onLoad={handleLoad}
-            />
-          ) : (
-            <EmptyState
-              recent={recent}
-              onOpenPicker={() => fileInputRef.current?.click()}
-              onOpenRecent={openRecent}
-              onForget={(k) => forgetFile(k).then(refreshRecent)}
+              bookKey={key!}
+              tool={tool}
+              color={inkColor}
             />
           )}
         </div>
@@ -485,7 +642,7 @@ export default function Reader() {
       </main>
 
       {rightOpen && showPanels && (
-        <div className="w-[360px] shrink-0">
+        <ResizablePanel id="words" edge="left" defaultWidth={360} minWidth={280}>
           <WordList
             words={words}
             onRemove={remove}
@@ -493,10 +650,61 @@ export default function Reader() {
             currentFileName={file?.name ?? null}
             onGoTo={goTo}
           />
-        </div>
+        </ResizablePanel>
       )}
 
-      {popover && <TranslationPopover state={popover} onClose={closePopover} />}
+      {(!file || libraryOpen) && (
+        <div
+          className="fixed inset-0 z-30 overflow-y-auto bg-paper"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            const files = [...e.dataTransfer.files];
+            if (books.length === 0 && files.length === 1) openFile(files[0]);
+            else addFiles(files);
+          }}
+        >
+          <Library
+            books={books}
+            currentKey={key}
+            adding={adding}
+            onOpen={openBook}
+            onRemove={async (k) => {
+              await removeBook(k);
+              deleteBookAnnotations(k);
+              if (k === key) {
+                setFile(null);
+                setPdf(null);
+              }
+              refreshBooks();
+            }}
+            onAdd={() => fileInputRef.current?.click()}
+            onClose={file ? () => setLibraryOpen(false) : undefined}
+          />
+        </div>
+      )}
+      {popover && (
+        <TranslationPopover state={popover} onClose={closePopover} onAsk={openChat} />
+      )}
+      {askChip && (
+        <button
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={openChat}
+          style={{ left: askChip.x + 8, top: askChip.y + 14 }}
+          className="fixed z-30 flex items-center gap-2 border border-rule bg-sheet px-3 py-1.5 text-sm shadow-[0_4px_16px_var(--shadow)] hover:border-ink"
+        >
+          Bu bölümü sor
+          <kbd className="font-mono text-[11px] text-muted">Ctrl K</kbd>
+        </button>
+      )}
+      <ChatModal
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        reference={chatReference}
+        onClearReference={() => setChatReference(null)}
+        chatId={key ?? "genel"}
+        title={file?.name.replace(/\.pdf$/i, "") ?? null}
+      />
       {showHelp && <ShortcutsDialog onClose={() => setShowHelp(false)} />}
     </div>
   );

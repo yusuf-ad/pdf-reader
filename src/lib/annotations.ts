@@ -1,0 +1,159 @@
+"use client";
+
+import { useSyncExternalStore } from "react";
+
+// Sayfalara eklenen kalem çizgileri ve yazılar (kitap başına localStorage).
+// Koordinatlar sayfa genişliği/yüksekliğine oranlanır (0–1); böylece her yakınlaştırmada
+// aynı yere düşer. Kalınlık ve yazı boyutu sayfa genişliğine oranlıdır.
+
+export type Tool = "pen" | "text" | "eraser";
+
+export const INK_COLORS = ["#1f1d1a", "#c0392b", "#2e5fa8", "#2f7d4f"] as const;
+
+export type Stroke = {
+  id: string;
+  type: "ink";
+  color: string;
+  width: number;
+  /** x0, y0, x1, y1, … */
+  points: number[];
+};
+
+export type Note = {
+  id: string;
+  type: "text";
+  color: string;
+  x: number;
+  y: number;
+  size: number;
+  text: string;
+};
+
+export type Annotation = Stroke | Note;
+
+type BookAnnotations = Record<number, Annotation[]>;
+
+const PREFIX = "pdf-reader:annotations:";
+const HISTORY_LIMIT = 100;
+const EMPTY: Annotation[] = [];
+
+const cache = new Map<string, BookAnnotations>();
+const listeners = new Set<() => void>();
+// Geri alma: her değişiklikten önceki sayfa durumu
+const history: { book: string; page: number; items: Annotation[] }[] = [];
+
+function load(book: string): BookAnnotations {
+  let data = cache.get(book);
+  if (!data) {
+    try {
+      data = JSON.parse(localStorage.getItem(PREFIX + book) ?? "{}") as BookAnnotations;
+    } catch {
+      data = {};
+    }
+    cache.set(book, data);
+  }
+  return data;
+}
+
+function write(book: string, page: number, items: Annotation[], record = true) {
+  const data = load(book);
+  if (record) {
+    history.push({ book, page, items: data[page] ?? EMPTY });
+    if (history.length > HISTORY_LIMIT) history.shift();
+  }
+  const next = { ...data };
+  if (items.length) next[page] = items;
+  else delete next[page];
+  cache.set(book, next);
+  try {
+    localStorage.setItem(PREFIX + book, JSON.stringify(next));
+  } catch {
+    // Depolama dolu: bu oturumda bellekte kalır
+  }
+  listeners.forEach((l) => l());
+}
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+export function usePageAnnotations(book: string | null, page: number) {
+  return useSyncExternalStore(
+    subscribe,
+    () => (book && load(book)[page]) || EMPTY,
+    () => EMPTY,
+  );
+}
+
+const current = (book: string, page: number) => load(book)[page] ?? EMPTY;
+
+export const newId = () => Math.random().toString(36).slice(2, 10);
+
+export function addAnnotation(book: string, page: number, item: Annotation) {
+  write(book, page, [...current(book, page), item]);
+}
+
+export function updateNote(book: string, page: number, id: string, patch: Partial<Note>) {
+  write(
+    book,
+    page,
+    current(book, page).map((a) => (a.id === id && a.type === "text" ? { ...a, ...patch } : a)),
+  );
+}
+
+export function removeAnnotations(book: string, page: number, ids: string[]) {
+  const items = current(book, page);
+  const next = items.filter((a) => !ids.includes(a.id));
+  if (next.length !== items.length) write(book, page, next);
+}
+
+/** Son değişikliği geri alır; geri alınacak bir şey yoksa false. */
+export function undo(book: string) {
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].book !== book) continue;
+    const [entry] = history.splice(i, 1);
+    write(book, entry.page, entry.items, false);
+    return true;
+  }
+  return false;
+}
+
+export function deleteBookAnnotations(book: string) {
+  cache.delete(book);
+  localStorage.removeItem(PREFIX + book);
+  listeners.forEach((l) => l());
+}
+
+/** Noktanın (px) çizgiye uzaklığı `radius` px'ten azsa true. */
+export function strokeHit(stroke: Stroke, x: number, y: number, w: number, h: number, radius: number) {
+  const p = stroke.points;
+  const r = radius + (stroke.width * w) / 2;
+  for (let i = 0; i < p.length; i += 2) {
+    const ax = p[i] * w;
+    const ay = p[i + 1] * h;
+    const bx = (p[i + 2] ?? p[i]) * w;
+    const by = (p[i + 3] ?? p[i + 1]) * h;
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len = dx * dx + dy * dy;
+    const t = len ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / len)) : 0;
+    if (Math.hypot(x - (ax + t * dx), y - (ay + t * dy)) <= r) return true;
+  }
+  return false;
+}
+
+/** Noktaları yumuşak bir SVG yoluna çevirir (orta noktalardan geçen eğriler). */
+export function strokePath(points: number[], w: number, h: number) {
+  const n = points.length / 2;
+  if (!n) return "";
+  const x = (i: number) => +(points[i * 2] * w).toFixed(1);
+  const y = (i: number) => +(points[i * 2 + 1] * h).toFixed(1);
+  // Tek nokta: yuvarlak uçlu kısa bir çizgi nokta gibi görünür
+  if (n === 1) return `M${x(0)} ${y(0)}l0.01 0`;
+  let d = `M${x(0)} ${y(0)}`;
+  for (let i = 1; i < n - 1; i++) {
+    d += `Q${x(i)} ${y(i)} ${((x(i) + x(i + 1)) / 2).toFixed(1)} ${((y(i) + y(i + 1)) / 2).toFixed(1)}`;
+  }
+  return `${d}L${x(n - 1)} ${y(n - 1)}`;
+}

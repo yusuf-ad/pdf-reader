@@ -1,15 +1,20 @@
 "use client";
 
 import { useState, type ReactNode, type RefObject } from "react";
+import { INK_COLORS, type Tool } from "@/lib/annotations";
 import {
   BookmarkIcon,
+  EraserIcon,
   ExpandIcon,
   FitPageIcon,
   FitWidthIcon,
   KeyboardIcon,
   PanelLeftIcon,
   PanelRightIcon,
+  PenIcon,
   SearchIcon,
+  TextIcon,
+  UndoIcon,
 } from "./icons";
 
 type Props = {
@@ -28,12 +33,24 @@ type Props = {
   onSearch: () => void;
   onFocusMode: () => void;
   onHelp: () => void;
-  onOpenFile: () => void;
+  onChat: () => void;
+  onLibrary: () => void;
   leftOpen: boolean;
   onToggleLeft: () => void;
   rightOpen: boolean;
   onToggleRight: () => void;
+  tool: Tool | null;
+  onTool: (tool: Tool | null) => void;
+  color: string;
+  onColor: (color: string) => void;
+  onUndo: () => void;
 };
+
+const TOOLS: [Tool, string, () => ReactNode][] = [
+  ["pen", "Kalem  D", PenIcon],
+  ["text", "Yazı ekle  T", TextIcon],
+  ["eraser", "Silgi  E  (ya da sağ tık basılı)", EraserIcon],
+];
 
 export default function Toolbar(p: Props) {
   const progress = p.numPages ? (p.currentPage / p.numPages) * 100 : 0;
@@ -79,6 +96,42 @@ export default function Toolbar(p: Props) {
 
       <Divider />
 
+      {TOOLS.map(([id, label, ToolIcon]) => (
+        <IconButton
+          key={id}
+          label={`${label}  (Esc: bırak)`}
+          active={p.tool === id}
+          onClick={() => p.onTool(p.tool === id ? null : id)}
+          highlight
+        >
+          <ToolIcon />
+        </IconButton>
+      ))}
+      {(p.tool === "pen" || p.tool === "text") && (
+        <div className="flex shrink-0 items-center gap-1 px-1" role="radiogroup" aria-label="Renk">
+          {INK_COLORS.map((c) => (
+            <button
+              key={c}
+              role="radio"
+              aria-checked={p.color === c}
+              aria-label={c}
+              onClick={() => p.onColor(c)}
+              style={{ background: c }}
+              className={`h-3.5 w-3.5 rounded-full [filter:var(--page-filter)] ${
+                p.color === c ? "ring-1 ring-ink ring-offset-2 ring-offset-paper" : "opacity-70 hover:opacity-100"
+              }`}
+            />
+          ))}
+        </div>
+      )}
+      {p.tool && (
+        <IconButton label="Geri al  Ctrl Z" onClick={p.onUndo}>
+          <UndoIcon />
+        </IconButton>
+      )}
+
+      <Divider />
+
       <IconButton label="Yer imi  B" active={p.bookmarked} onClick={p.onToggleBookmark}>
         <BookmarkIcon filled={p.bookmarked} />
       </IconButton>
@@ -94,8 +147,21 @@ export default function Toolbar(p: Props) {
 
       <Divider />
 
-      <button onClick={p.onOpenFile} className="px-2 text-muted hover:text-ink">
-        Başka dosya
+      <button
+        onClick={p.onChat}
+        title="Seçili metin hakkında sor"
+        className="flex shrink-0 items-center gap-1.5 px-2 text-muted hover:text-ink"
+      >
+        Sor
+        <kbd className="border border-rule px-1 font-mono text-[11px]">Ctrl K</kbd>
+      </button>
+      <button
+        onClick={p.onLibrary}
+        title="Kitaplık  L"
+        className="flex shrink-0 items-center gap-1.5 px-2 text-muted hover:text-ink"
+      >
+        Kitaplık
+        <kbd className="border border-rule px-1 font-mono text-[11px]">L</kbd>
       </button>
       <IconButton label="Kelime listesi  ]" active={p.rightOpen} onClick={p.onToggleRight}>
         <PanelRightIcon />
@@ -113,11 +179,14 @@ export default function Toolbar(p: Props) {
 function IconButton({
   label,
   active,
+  highlight,
   onClick,
   children,
 }: {
   label: string;
   active?: boolean;
+  /** Etkinken arka planla belirginleştir (seçili araç) */
+  highlight?: boolean;
   onClick: () => void;
   children: ReactNode;
 }) {
@@ -129,7 +198,7 @@ function IconButton({
       aria-pressed={active}
       className={`flex h-8 w-8 shrink-0 items-center justify-center transition-colors hover:text-ink ${
         active ? "text-ink" : "text-muted"
-      }`}
+      } ${active && highlight ? "bg-ink/8" : ""}`}
     >
       {children}
     </button>

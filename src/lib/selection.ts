@@ -68,6 +68,29 @@ export function extractSelection(selection: Selection): PdfSelection | null {
   return { word, sentence: sentenceAround(text, expanded.start, expanded.end), page };
 }
 
+const MAX_REFERENCE_LENGTH = 6000;
+
+/** Sohbet referansı için: PDF'te seçili metin (uzunluk sınırı yok, paragraf da olabilir). */
+export function selectedPdfText(selection: Selection): { text: string; page: number | null } | null {
+  if (selection.rangeCount === 0 || selection.isCollapsed) return null;
+  const node = selection.getRangeAt(0).startContainer;
+  const el = node instanceof Element ? node : node.parentElement;
+  const layer = el?.closest(".textLayer");
+  if (!layer) return null;
+
+  const pageEl = layer.closest<HTMLElement>("[data-page-number]");
+  const text = joinHyphenation(selection.toString())
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^\d{1,3}\s+(?=\p{Lu})/u, "") // baştaki dipnot numarası
+    .replace(FOOTNOTE_MARK, "$1");
+  if (!text) return null;
+  return {
+    text: text.slice(0, MAX_REFERENCE_LENGTH),
+    page: pageEl ? Number(pageEl.dataset.pageNumber) : null,
+  };
+}
+
 type Segment = { node: Text; start: number };
 
 /** Seçim sınırını (düğüm + ofset) katman metnindeki konuma çevirir. */

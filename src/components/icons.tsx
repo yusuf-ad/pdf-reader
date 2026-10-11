@@ -70,3 +70,30 @@ export const KeyboardIcon = () => (
     <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10" />
   </Icon>
 );
+
+export const PenIcon = () => (
+  <Icon>
+    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z" />
+    <path d="m14.5 5.5 3 3" />
+  </Icon>
+);
+
+export const TextIcon = () => (
+  <Icon>
+    <path d="M5 6V4.5h14V6M12 4.5v15M9 19.5h6" />
+  </Icon>
+);
+
+export const EraserIcon = () => (
+  <Icon>
+    <path d="m7 20-3.3-3.3a1.5 1.5 0 0 1 0-2.1L13.6 4.7a1.5 1.5 0 0 1 2.1 0l4.6 4.6a1.5 1.5 0 0 1 0 2.1L11.7 20z" />
+    <path d="M7 20h13M9 11.5l5.5 5.5" />
+  </Icon>
+);
+
+export const UndoIcon = () => (
+  <Icon>
+    <path d="M9 14 4 9l5-5" />
+    <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+  </Icon>
+);

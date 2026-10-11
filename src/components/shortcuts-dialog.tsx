@@ -3,6 +3,8 @@
 import { useEffect } from "react";
 
 const SHORTCUTS: [string, string][] = [
+  ["Ctrl + K", "Seçili metin hakkında sor (sohbet)"],
+  ["L", "Kitaplık (Esc ile okumaya dön)"],
   ["→  /  ←", "Sonraki / önceki sayfa"],
   ["Home  /  End", "İlk / son sayfa"],
   ["G", "Sayfa numarasına git"],
@@ -16,6 +18,9 @@ const SHORTCUTS: [string, string][] = [
   ["F", "Odak modu (tam ekran, paneller gizli)"],
   ["[  /  ]", "Sol paneli / kelime listesini aç-kapat"],
   ["Çift tık", "Kelimeyi seç ve çevir"],
+  ["D  /  T  /  E", "Kalem / yazı ekle / silgi (Esc ile bırak)"],
+  ["Sağ tık basılı", "Kalem / yazı açıkken geçici silgi"],
+  ["Ctrl + Z", "Son çizimi / yazıyı geri al"],
   ["Esc", "Açık pencereyi kapat"],
   ["?", "Bu listeyi göster"],
 ];

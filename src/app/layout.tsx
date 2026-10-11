@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Sans, Newsreader } from "next/font/google";
+import Script from "next/script";
 import { THEME_STORAGE_KEY } from "@/lib/theme";
 import "./globals.css";
 
@@ -30,10 +31,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       suppressHydrationWarning
       className={`${newsreader.variable} ${plex.variable} h-full antialiased`}
     >
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-      </head>
-      <body className="h-full">{children}</body>
+      <body className="h-full">
+        {/* beforeInteractive: sunucu HTML'ine eklenir, sayfa boyanmadan çalışır */}
+        <Script id="theme" strategy="beforeInteractive">
+          {themeScript}
+        </Script>
+        {children}
+      </body>
     </html>
   );
 }
