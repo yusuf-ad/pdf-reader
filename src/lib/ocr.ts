@@ -1,0 +1,223 @@
+"use client";
+
+import type { PDFPageProxy } from "pdfjs-dist";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import type { Worker } from "tesseract.js";
+
+// Taranmış (yalnızca resimden oluşan) sayfalar için metin tanıma.
+// Sayfa ekrana gelince arka planda tesseract.js ile okunur; kelimeler sayfadaki
+// konumlarıyla görünmez bir metin katmanı olarak yerleştirilir ve seçilebilir olur.
+// Sonuçlar IndexedDB'de saklanır, aynı sayfa bir daha okunmaz.
+
+/** Tanınacak dil(ler); örn. "eng+tur" */
+const LANGS = "eng";
+// Bundan az harf içeren sayfa "taranmış" sayılır
+const MIN_TEXT_CHARS = 20;
+// Tesseract ~300 DPI sever; sayfa bu genişlikte çizilip okunur
+const OCR_WIDTH = 1800;
+const MIN_CONFIDENCE = 30;
+
+/** Kelime ve sınırları (sayfaya oranla 0–1): [x0, y0, x1, y1] */
+export type OcrWord = { t: string; b: [number, number, number, number] };
+export type OcrPage = { lines: OcrWord[][] };
+
+export type OcrState =
+  | { status: "idle" | "has-text" | "loading" | "error" }
+  | { status: "done"; data: OcrPage };
+
+// --- Sonuç önbelleği (IndexedDB) -------------------------------------------
+
+const DB_NAME = "pdf-reader-ocr";
+const STORE = "pages";
+let dbPromise: Promise<IDBDatabase> | null = null;
+
+function db() {
+  dbPromise ??= new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  return dbPromise;
+}
+
+async function idb<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>) {
+  const d = await db();
+  return new Promise<T>((resolve, reject) => {
+    const req = fn(d.transaction(STORE, mode).objectStore(STORE));
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+const pageKey = (book: string, page: number) => `${book}#${page}`;
+
+export async function loadOcr(book: string, page: number): Promise<OcrPage | undefined> {
+  try {
+    return await idb<OcrPage | undefined>("readonly", (s) => s.get(pageKey(book, page)));
+  } catch {
+    return undefined;
+  }
+}
+
+/** OCR ile tanınmış sayfanın düz metni (arama, sohbet bağlamı için). */
+export async function loadOcrText(book: string, page: number) {
+  const data = await loadOcr(book, page);
+  return data?.lines.map((line) => line.map((w) => w.t).join(" ")).join(" ");
+}
+
+export async function deleteBookOcr(book: string) {
+  const range = IDBKeyRange.bound(`${book}#`, `${book}#￿`);
+  await idb("readwrite", (s) => s.delete(range)).catch(() => {});
+}
+
+// --- Tanıma kuyruğu -----------------------------------------------------------
+
+let workerPromise: Promise<Worker> | null = null;
+
+function worker() {
+  workerPromise ??= import("tesseract.js").then(({ createWorker }) => createWorker(LANGS));
+  workerPromise.catch(() => (workerPromise = null)); // ağ hatası: sonra tekrar denensin
+  return workerPromise;
+}
+
+type Job = { run: () => Promise<void>; signal: AbortSignal };
+const queue: Job[] = [];
+let running = false;
+
+async function drain() {
+  if (running) return;
+  running = true;
+  while (queue.length) {
+    // En son istenen önce: kullanıcının şu an baktığı sayfa
+    const job = queue.pop()!;
+    if (!job.signal.aborted) await job.run();
+  }
+  running = false;
+}
+
+async function recognize(page: PDFPageProxy): Promise<OcrPage> {
+  const base = page.getViewport({ scale: 1 });
+  const viewport = page.getViewport({ scale: OCR_WIDTH / base.width });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(viewport.width);
+  canvas.height = Math.round(viewport.height);
+  await page.render({ canvas, viewport }).promise;
+
+  const w = await worker();
+  const { data } = await w.recognize(canvas, {}, { blocks: true, text: false });
+  const r = (n: number) => +n.toFixed(4);
+  const lines: OcrWord[][] = [];
+  for (const block of data.blocks ?? [])
+    for (const para of block.paragraphs)
+      for (const line of para.lines) {
+        const words = line.words
+          .filter((word) => word.text.trim() && word.confidence >= MIN_CONFIDENCE)
+          .map((word) => ({
+            t: word.text,
+            b: [
+              r(word.bbox.x0 / canvas.width),
+              r(word.bbox.y0 / canvas.height),
+              r(word.bbox.x1 / canvas.width),
+              r(word.bbox.y1 / canvas.height),
+            ] as OcrWord["b"],
+          }));
+        if (words.length) lines.push(words);
+      }
+  return { lines };
+}
+
+function enqueue(page: PDFPageProxy, key: string, signal: AbortSignal) {
+  return new Promise<OcrPage>((resolve, reject) => {
+    queue.push({
+      signal,
+      // Başlamış iş, sayfadan çıkılsa da bitirilip saklanır
+      run: () =>
+        recognize(page)
+          .then(async (data) => {
+            await idb("readwrite", (s) => s.put(data, key)).catch(() => {});
+            resolve(data);
+          })
+          .catch(reject),
+    });
+    signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    drain();
+  });
+}
+
+async function hasText(page: PDFPageProxy) {
+  const content = await page.getTextContent();
+  let chars = 0;
+  for (const item of content.items) {
+    if ("str" in item) chars += item.str.replace(/\s/g, "").length;
+    if (chars >= MIN_TEXT_CHARS) return true;
+  }
+  return false;
+}
+
+/** Sayfa taranmışsa (metni yoksa) OCR ile tanır; sonucu önbellekten de getirebilir. */
+export function useOcr(book: string, page: PDFPageProxy | null, enabled: boolean) {
+  const [state, setState] = useState<{ key: string; value: OcrState }>({
+    key: "",
+    value: { status: "idle" },
+  });
+  const pageNumber = page?.pageNumber ?? 0;
+  const key = page && enabled ? pageKey(book, pageNumber) : "";
+
+  useEffect(() => {
+    if (!page || !key) return;
+    const controller = new AbortController();
+    const set = (value: OcrState) => !controller.signal.aborted && setState({ key, value });
+
+    (async () => {
+      const cached = await loadOcr(book, pageNumber);
+      if (cached) return set({ status: "done", data: cached });
+      if (await hasText(page)) return set({ status: "has-text" });
+      set({ status: "loading" });
+      try {
+        const data = await enqueue(page, key, controller.signal);
+        set({ status: "done", data });
+      } catch {
+        set({ status: "error" });
+      }
+    })();
+    return () => controller.abort();
+  }, [book, page, pageNumber, key]);
+
+  return state.key === key ? state.value : { status: "idle" as const };
+}
+
+// --- Kitap başına açma/kapama (localStorage) ---------------------------------
+
+const DISABLED_KEY = "pdf-reader:ocr-disabled";
+const listeners = new Set<() => void>();
+let disabledCache: string[] | null = null;
+
+function disabledBooks() {
+  if (!disabledCache) {
+    try {
+      disabledCache = JSON.parse(localStorage.getItem(DISABLED_KEY) ?? "[]") as string[];
+    } catch {
+      disabledCache = [];
+    }
+  }
+  return disabledCache;
+}
+
+export function setOcrEnabled(book: string, enabled: boolean) {
+  const rest = disabledBooks().filter((b) => b !== book);
+  disabledCache = enabled ? rest : [...rest, book];
+  localStorage.setItem(DISABLED_KEY, JSON.stringify(disabledCache));
+  listeners.forEach((l) => l());
+}
+
+export function useOcrEnabled(book: string | null) {
+  return useSyncExternalStore(
+    (l) => {
+      listeners.add(l);
+      return () => listeners.delete(l);
+    },
+    () => !!book && !disabledBooks().includes(book),
+    () => false,
+  );
+}

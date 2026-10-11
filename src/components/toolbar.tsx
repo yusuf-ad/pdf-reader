@@ -9,6 +9,7 @@ import {
   FitPageIcon,
   FitWidthIcon,
   KeyboardIcon,
+  OcrIcon,
   PanelLeftIcon,
   PanelRightIcon,
   PenIcon,
@@ -44,6 +45,8 @@ type Props = {
   color: string;
   onColor: (color: string) => void;
   onUndo: () => void;
+  ocr: boolean;
+  onToggleOcr: () => void;
 };
 
 const TOOLS: [Tool, string, () => ReactNode][] = [
@@ -137,6 +140,13 @@ export default function Toolbar(p: Props) {
       </IconButton>
       <IconButton label="Belgede ara  Ctrl F" onClick={p.onSearch}>
         <SearchIcon />
+      </IconButton>
+      <IconButton
+        label={`Taranmış sayfalarda metin tanıma (OCR): ${p.ocr ? "açık" : "kapalı"}`}
+        active={p.ocr}
+        onClick={p.onToggleOcr}
+      >
+        <OcrIcon />
       </IconButton>
       <IconButton label="Odak modu  F" onClick={p.onFocusMode}>
         <ExpandIcon />

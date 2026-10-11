@@ -83,8 +83,24 @@ body {
   filter: var(--page-filter);
 }
 
-.react-pdf__Page .textLayer ::selection {
+.react-pdf__Page .textLayer ::selection,
+.ocr-layer ::selection {
   background: var(--mark);
+}
+
+/* Taranmış sayfalarda OCR ile tanınan metin: görünmez ama seçilebilir (pdf.js metin katmanı gibi) */
+.ocr-layer {
+  overflow: clip;
+  line-height: 1;
+}
+.ocr-layer :is(span, br) {
+  position: absolute;
+  margin: 0;
+  color: transparent;
+  font-family: sans-serif;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0 0;
 }
 
 /* Metin katmanındaki işaretler (metin şeffaf kalır, altta canvas görünür) */

@@ -1,13 +1,15 @@
 "use client";
 
-import type { PDFDocumentProxy } from "pdfjs-dist";
+import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import { useEffect, useRef, useState } from "react";
 import { Document, Page, type PageProps } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import type { Tool } from "@/lib/annotations";
+import { useOcr } from "@/lib/ocr";
 import { PDF_OPTIONS } from "@/lib/pdfjs"; // worker ayarını da yapar
 import AnnotationLayer from "./annotation-layer";
+import OcrTextLayer from "./ocr-text-layer";
 
 type Props = {
   file: File;
@@ -19,9 +21,11 @@ type Props = {
   bookKey: string;
   tool: Tool | null;
   color: string;
+  /** Taranmış sayfalarda metin tanıma açık mı */
+  ocr: boolean;
 };
 
-type AnnotationProps = Pick<Props, "bookKey" | "tool" | "color">;
+type PageExtras = Pick<Props, "bookKey" | "tool" | "color" | "ocr">;
 
 export default function PdfViewer({ file, pageWidth, pageHeight, textRenderer, onLoad, ...annotation }: Props) {
   const [numPages, setNumPages] = useState(0);
@@ -78,7 +82,7 @@ function LazyPage({
   width: number;
   height: number;
   textRenderer?: PageProps["customTextRenderer"];
-  annotation: AnnotationProps;
+  annotation: PageExtras;
 }) {
   const ref = useRef<HTMLElement>(null);
   const [visible, setVisible] = useState(false);
@@ -88,6 +92,8 @@ function LazyPage({
   const [target, setTarget] = useState(width);
   // Ekranda gösterilen, çizimi tamamlanmış genişlik
   const [shown, setShown] = useState<number | null>(null);
+  const [pdfPage, setPdfPage] = useState<PDFPageProxy | null>(null);
+  const ocr = useOcr(annotation.bookKey, pdfPage, annotation.ocr && visible);
 
   useEffect(() => {
     const el = ref.current;
@@ -134,7 +140,10 @@ function LazyPage({
                   width={w}
                   loading={null}
                   customTextRenderer={textRenderer}
-                  onLoadSuccess={(page) => setAspect(page.originalHeight / page.originalWidth)}
+                  onLoadSuccess={(page) => {
+                    setAspect(page.originalHeight / page.originalWidth);
+                    setPdfPage(page);
+                  }}
                   onRenderSuccess={() => setShown(w)}
                   renderAnnotationLayer
                   renderTextLayer
@@ -142,6 +151,14 @@ function LazyPage({
               </div>
             );
           })}
+        {visible && ocr.status === "done" && (
+          <OcrTextLayer data={ocr.data} width={width} height={frameHeight} />
+        )}
+        {ocr.status === "loading" && (
+          <span className="pointer-events-none absolute top-2 right-2 z-20 bg-sheet/90 px-2 py-0.5 text-[11px] text-muted">
+            Metin tanınıyor…
+          </span>
+        )}
         {visible && (
           <AnnotationLayer
             book={annotation.bookKey}

@@ -16,6 +16,7 @@ import {
 } from "@/lib/file-store";
 import { deleteBookAnnotations, INK_COLORS, undo, type Tool } from "@/lib/annotations";
 import type { Reference } from "@/lib/chat";
+import { deleteBookOcr, setOcrEnabled, useOcrEnabled } from "@/lib/ocr";
 import { getPageText, usePdfSearch } from "@/lib/pdf-search";
 import { loadProgress, saveProgress, toggleBookmark, useBookmarks } from "@/lib/reading-state";
 import { extractSelection, selectedPdfText } from "@/lib/selection";
@@ -88,6 +89,7 @@ export default function Reader() {
   const { words, add, remove, clear } = useSavedWords();
   const key = file ? fileKey(file) : null;
   const bookmarks = useBookmarks(key);
+  const ocrEnabled = useOcrEnabled(key);
   const numPages = pdf?.numPages ?? 0;
 
   const baseWidth = Math.min(rootWidth, MAX_PAGE_WIDTH);
@@ -313,11 +315,11 @@ export default function Reader() {
       lastSelectionRef.current = null;
       window.getSelection()?.removeAllRanges();
       const pageText =
-        pdf && sel.page ? (await getPageText(pdf, sel.page)).slice(0, 6000) : undefined;
+        pdf && sel.page ? (await getPageText(pdf, sel.page, key)).slice(0, 6000) : undefined;
       setChatReference({ ...sel, fileName: file?.name ?? null, pageText });
     }
     setChatOpen(true);
-  }, [pdf, file, closePopover]);
+  }, [pdf, file, key, closePopover]);
 
   const toggleFocusMode = useCallback(() => {
     if (document.fullscreenElement) document.exitFullscreen();
@@ -331,7 +333,7 @@ export default function Reader() {
   }, []);
 
   const searchActive = leftOpen && leftTab === "search";
-  const search = usePdfSearch(pdf, searchActive ? searchQuery : "");
+  const search = usePdfSearch(pdf, searchActive ? searchQuery : "", key);
 
   // Kaydedilen kelimeler ve arama sonuçları sayfada işaretlenir
   const vocabulary = useMemo(
@@ -604,6 +606,8 @@ export default function Reader() {
             color={inkColor}
             onColor={setInkColor}
             onUndo={() => key && undo(key)}
+            ocr={ocrEnabled}
+            onToggleOcr={() => key && setOcrEnabled(key, !ocrEnabled)}
           />
         )}
 
@@ -624,6 +628,7 @@ export default function Reader() {
               bookKey={key!}
               tool={tool}
               color={inkColor}
+              ocr={ocrEnabled}
             />
           )}
         </div>
@@ -672,6 +677,7 @@ export default function Reader() {
             onRemove={async (k) => {
               await removeBook(k);
               deleteBookAnnotations(k);
+              deleteBookOcr(k);
               if (k === key) {
                 setFile(null);
                 setPdf(null);

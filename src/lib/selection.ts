@@ -19,7 +19,7 @@ export function extractSelection(selection: Selection): PdfSelection | null {
     range.startContainer instanceof Element
       ? range.startContainer
       : range.startContainer.parentElement;
-  const layer = startEl?.closest(".textLayer");
+  const layer = startEl?.closest(".textLayer, .ocr-layer");
   if (!layer) return null;
 
   const pageEl = layer.closest<HTMLElement>("[data-page-number]");
@@ -75,7 +75,7 @@ export function selectedPdfText(selection: Selection): { text: string; page: num
   if (selection.rangeCount === 0 || selection.isCollapsed) return null;
   const node = selection.getRangeAt(0).startContainer;
   const el = node instanceof Element ? node : node.parentElement;
-  const layer = el?.closest(".textLayer");
+  const layer = el?.closest(".textLayer, .ocr-layer");
   if (!layer) return null;
 
   const pageEl = layer.closest<HTMLElement>("[data-page-number]");

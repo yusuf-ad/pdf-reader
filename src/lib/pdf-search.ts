@@ -2,13 +2,15 @@
 
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { useEffect, useState } from "react";
+import { loadOcrText } from "./ocr";
 
 export type SearchHit = { page: number; snippet: string; start: number; length: number };
 
 const MAX_HITS = 500;
 const textCache = new WeakMap<PDFDocumentProxy, Map<number, string>>();
 
-export async function getPageText(pdf: PDFDocumentProxy, pageNumber: number) {
+/** Sayfanın metni; taranmış sayfalarda (book verilirse) OCR ile tanınmış metin. */
+export async function getPageText(pdf: PDFDocumentProxy, pageNumber: number, book?: string | null) {
   let pages = textCache.get(pdf);
   if (!pages) textCache.set(pdf, (pages = new Map()));
   const cached = pages.get(pageNumber);
@@ -20,6 +22,13 @@ export async function getPageText(pdf: PDFDocumentProxy, pageNumber: number) {
     .map((item) => ("str" in item ? item.str + (item.hasEOL ? " " : "") : ""))
     .join("")
     .replace(/\s+/g, " ");
+  if (book && text.trim().length < 20) {
+    const ocr = await loadOcrText(book, pageNumber);
+    // Henüz tanınmadıysa önbelleğe alma; sonra tanınınca bulunabilsin
+    if (!ocr) return text;
+    pages.set(pageNumber, ocr);
+    return ocr;
+  }
   pages.set(pageNumber, text);
   return text;
 }
@@ -27,7 +36,7 @@ export async function getPageText(pdf: PDFDocumentProxy, pageNumber: number) {
 type State = { key: string; hits: SearchHit[]; scanned: number };
 
 /** Belgedeki tüm sayfalarda arar; sonuçlar sayfa sayfa gelir. */
-export function usePdfSearch(pdf: PDFDocumentProxy | null, query: string) {
+export function usePdfSearch(pdf: PDFDocumentProxy | null, query: string, book?: string | null) {
   const [state, setState] = useState<State>({ key: "", hits: [], scanned: 0 });
   const q = query.trim();
   const key = pdf && q.length >= 2 ? `${pdf.fingerprints[0]}:${q.toLowerCase()}` : "";
@@ -40,7 +49,7 @@ export function usePdfSearch(pdf: PDFDocumentProxy | null, query: string) {
     const timer = setTimeout(async () => {
       const hits: SearchHit[] = [];
       for (let p = 1; p <= pdf.numPages && !cancelled; p++) {
-        const text = await getPageText(pdf, p);
+        const text = await getPageText(pdf, p, book);
         const haystack = text.toLowerCase();
         for (let i = haystack.indexOf(needle); i >= 0 && hits.length < MAX_HITS; ) {
           const from = Math.max(0, i - 40);
@@ -63,7 +72,7 @@ export function usePdfSearch(pdf: PDFDocumentProxy | null, query: string) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [pdf, key, q]);
+  }, [pdf, key, q, book]);
 
   const active = key !== "" && state.key === key;
   const hits = active ? state.hits : [];
