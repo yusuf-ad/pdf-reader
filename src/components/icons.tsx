@@ -1,0 +1,72 @@
+import type { SVGProps } from "react";
+
+function Icon({ children, ...props }: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      {...props}
+    >
+      {children}
+    </svg>
+  );
+}
+
+export const PanelLeftIcon = () => (
+  <Icon>
+    <rect x="3" y="4" width="18" height="16" rx="1.5" />
+    <path d="M9 4v16" />
+  </Icon>
+);
+
+export const PanelRightIcon = () => (
+  <Icon>
+    <rect x="3" y="4" width="18" height="16" rx="1.5" />
+    <path d="M15 4v16" />
+  </Icon>
+);
+
+export const BookmarkIcon = ({ filled }: { filled?: boolean }) => (
+  <Icon fill={filled ? "currentColor" : "none"}>
+    <path d="M6 3.5h12v17l-6-4.5-6 4.5z" />
+  </Icon>
+);
+
+export const FitWidthIcon = () => (
+  <Icon>
+    <path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4" />
+  </Icon>
+);
+
+export const FitPageIcon = () => (
+  <Icon>
+    <rect x="6" y="3" width="12" height="18" rx="1" />
+  </Icon>
+);
+
+export const ExpandIcon = () => (
+  <Icon>
+    <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+  </Icon>
+);
+
+export const SearchIcon = () => (
+  <Icon>
+    <circle cx="11" cy="11" r="6.5" />
+    <path d="m20 20-4.2-4.2" />
+  </Icon>
+);
+
+export const KeyboardIcon = () => (
+  <Icon>
+    <rect x="2.5" y="6" width="19" height="12" rx="1.5" />
+    <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10" />
+  </Icon>
+);

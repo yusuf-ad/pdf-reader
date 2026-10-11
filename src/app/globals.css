@@ -1,26 +1,90 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+ * Göz yormaması için: saf beyaz/siyah yok, kontrast okunaklı ama sert değil.
+ * PDF sayfaları da temaya göre filtreleniyor (yalnızca canvas; metin katmanı/seçim etkilenmez).
+ */
+:root,
+[data-theme="light"] {
+  --paper: #ece8df;
+  --sheet: #f4f1ea;
+  --ink: #2e2b27;
+  --muted: #6f6a62;
+  --rule: #d9d3c7;
+  --accent: #8a3d24;
+  --mark: rgba(226, 190, 80, 0.4);
+  --shadow: rgba(46, 43, 39, 0.1);
+  --page-filter: sepia(0.08) brightness(0.96);
+}
+
+[data-theme="sepia"] {
+  --paper: #e6dcc6;
+  --sheet: #efe6d2;
+  --ink: #40362b;
+  --muted: #7a6b56;
+  --rule: #d3c5a8;
+  --accent: #8a4626;
+  --mark: rgba(205, 160, 60, 0.38);
+  --shadow: rgba(64, 54, 43, 0.12);
+  --page-filter: sepia(0.4) brightness(0.93) contrast(0.95);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #1c1b19;
+  --sheet: #232220;
+  --ink: #d6d1c7;
+  --muted: #918b80;
+  --rule: #36332f;
+  --accent: #d39a7c;
+  --mark: rgba(200, 160, 70, 0.3);
+  --shadow: rgba(0, 0, 0, 0.4);
+  /* Beyaz sayfayı koyu zemine çevirir; hue-rotate renkleri yaklaşık korur */
+  --page-filter: invert(0.87) hue-rotate(180deg) sepia(0.15);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-paper: var(--paper);
+  --color-sheet: var(--sheet);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-rule: var(--rule);
+  --color-accent: var(--accent);
+  --color-mark: var(--mark);
+  --font-serif: var(--font-newsreader), Georgia, serif;
+  --font-sans: var(--font-plex), system-ui, sans-serif;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.react-pdf__Page {
+  background: transparent !important;
+  box-shadow: 0 1px 4px var(--shadow);
+}
+
+.react-pdf__Page__canvas {
+  filter: var(--page-filter);
+}
+
+.react-pdf__Page .textLayer ::selection {
+  background: var(--mark);
+}
+
+/* Metin katmanındaki işaretler (metin şeffaf kalır, altta canvas görünür) */
+.react-pdf__Page .textLayer mark {
+  color: transparent;
+  padding: 0;
+}
+.react-pdf__Page .textLayer mark.hl-search {
+  background: rgba(230, 150, 40, 0.35);
+  border-radius: 2px;
+}
+.react-pdf__Page .textLayer mark.hl-vocab {
+  background: transparent;
+  box-shadow: inset 0 -0.12em 0 var(--accent);
 }
