@@ -18,9 +18,10 @@ const SHORTCUTS: [string, string][] = [
   ["F", "Odak modu (tam ekran, paneller gizli)"],
   ["[  /  ]", "Sol paneli / kelime listesini aç-kapat"],
   ["Çift tık", "Kelimeyi seç ve çevir"],
+  ["H", "Seçili metni vurgula (vurguya tıkla: renk, sor, sil)"],
   ["D  /  T  /  E", "Kalem / yazı ekle / silgi (Esc ile bırak)"],
   ["Sağ tık basılı", "Kalem / yazı açıkken geçici silgi"],
-  ["Ctrl + Z", "Son çizimi / yazıyı geri al"],
+  ["Ctrl + Z", "Son çizimi / yazıyı / vurguyu geri al"],
   ["Esc", "Açık pencereyi kapat"],
   ["?", "Bu listeyi göster"],
 ];

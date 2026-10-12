@@ -133,7 +133,7 @@ export default function WordList({ words, onRemove, onClear, currentFileName, on
         ))}
       </ul>
 
-      <div className="flex items-center gap-1 border-t border-rule px-6 py-3 text-xs">
+      <div className="flex flex-wrap items-center gap-1 border-t border-rule px-6 py-3 text-xs">
         <span className="mr-2 text-muted">Tema</span>
         {THEMES.map((t) => (
           <button

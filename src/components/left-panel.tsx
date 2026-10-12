@@ -2,9 +2,10 @@
 
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { useEffect, useState, type RefObject } from "react";
+import { removeAnnotations, useBookAnnotations, type Highlight } from "@/lib/annotations";
 import type { SearchHit } from "@/lib/pdf-search";
 
-export type LeftTab = "contents" | "bookmarks" | "search";
+export type LeftTab = "contents" | "bookmarks" | "highlights" | "search";
 
 type Search = {
   hits: SearchHit[];
@@ -26,11 +27,15 @@ type Props = {
   onQueryChange: (query: string) => void;
   search: Search;
   searchInputRef: RefObject<HTMLInputElement | null>;
+  book: string | null;
+  /** Vurgulanan metni sohbete sor */
+  onAsk: (text: string, page: number) => void;
 };
 
 const TABS: [LeftTab, string][] = [
   ["contents", "İçindekiler"],
   ["bookmarks", "Yer imleri"],
+  ["highlights", "Vurgular"],
   ["search", "Ara"],
 ];
 
@@ -38,7 +43,7 @@ export default function LeftPanel(props: Props) {
   const { tab, onTabChange } = props;
   return (
     <aside className="flex h-full min-h-0 flex-col border-r border-rule bg-sheet">
-      <nav className="flex gap-4 border-b border-rule px-5 text-sm">
+      <nav className="flex gap-3 border-b border-rule px-4 text-[13px]">
         {TABS.map(([id, label]) => (
           <button
             key={id}
@@ -54,6 +59,7 @@ export default function LeftPanel(props: Props) {
       <div className="min-h-0 flex-1 overflow-y-auto">
         {tab === "contents" && <Contents pdf={props.pdf} onGoTo={props.onGoTo} />}
         {tab === "bookmarks" && <Bookmarks {...props} />}
+        {tab === "highlights" && <Highlights {...props} />}
         {tab === "search" && <SearchTab {...props} />}
       </div>
     </aside>
@@ -146,6 +152,52 @@ function Bookmarks({ bookmarks, currentPage, onGoTo, onToggleBookmark }: Props) 
         </ul>
       )}
     </div>
+  );
+}
+
+function Highlights({ book, currentPage, onGoTo, onAsk }: Props) {
+  const all = useBookAnnotations(book);
+  const items = Object.entries(all)
+    .flatMap(([page, list]) =>
+      list.filter((a): a is Highlight => a.type === "highlight").map((hl) => ({ ...hl, page: +page })),
+    )
+    .sort((a, b) => a.page - b.page || a.rects[1] - b.rects[1]);
+
+  if (!book || !items.length) {
+    return (
+      <Empty>
+        Henüz vurgu yok. Metni seç, <span className="font-mono text-xs">H</span> tuşuna bas ya da
+        çıkan renklerden birine tıkla.
+      </Empty>
+    );
+  }
+  return (
+    <ul className="py-2">
+      {items.map((hl) => (
+        <li key={hl.id} className="group relative hover:bg-ink/5">
+          <button onClick={() => onGoTo(hl.page)} className="block w-full px-5 py-2 text-left">
+            <span className="text-xs tabular-nums text-muted">
+              s. {hl.page}
+              {hl.page === currentPage && " · buradasın"}
+            </span>
+            <p
+              className="mt-0.5 line-clamp-4 border-l-[3px] pl-2 font-serif text-[15px] leading-snug"
+              style={{ borderColor: hl.color }}
+            >
+              {hl.text}
+            </p>
+          </button>
+          <div className="absolute top-2 right-4 flex gap-3 text-xs text-muted opacity-0 group-hover:opacity-100">
+            <button onClick={() => onAsk(hl.text, hl.page)} className="hover:text-ink">
+              Sor
+            </button>
+            <button onClick={() => removeAnnotations(book, hl.page, [hl.id])} className="hover:text-accent">
+              Sil
+            </button>
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }
 

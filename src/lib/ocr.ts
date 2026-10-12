@@ -170,11 +170,13 @@ export function useOcr(book: string, page: PDFPageProxy | null, enabled: boolean
     const set = (value: OcrState) => !controller.signal.aborted && setState({ key, value });
 
     (async () => {
-      const cached = await loadOcr(book, pageNumber);
-      if (cached) return set({ status: "done", data: cached });
-      if (await hasText(page)) return set({ status: "has-text" });
-      set({ status: "loading" });
       try {
+        const cached = await loadOcr(book, pageNumber);
+        if (cached) return set({ status: "done", data: cached });
+        // Beklerken belge kapatıldıysa sayfa yok edilmiş olur; ona dokunma
+        if (controller.signal.aborted) return;
+        if (await hasText(page)) return set({ status: "has-text" });
+        set({ status: "loading" });
         const data = await enqueue(page, key, controller.signal);
         set({ status: "done", data });
       } catch {

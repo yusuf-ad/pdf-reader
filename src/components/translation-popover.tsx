@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import type { Translation } from "@/lib/types";
 import Highlighted from "./highlighted";
+import HighlightSwatches from "./highlight-swatches";
 
 export type PopoverState = {
   x: number;
@@ -18,11 +19,13 @@ type Props = {
   state: PopoverState;
   onClose: () => void;
   onAsk: () => void;
+  highlightColor: string;
+  onHighlight: (color: string) => void;
 };
 
 const WIDTH = 380;
 
-export default function TranslationPopover({ state, onClose, onAsk }: Props) {
+export default function TranslationPopover({ state, onClose, onAsk, highlightColor, onHighlight }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -79,15 +82,23 @@ export default function TranslationPopover({ state, onClose, onAsk }: Props) {
         </>
       )}
 
-      {state.status !== "loading" && (
-        <button
-          onClick={onAsk}
-          className="mt-4 flex items-center gap-2 text-xs text-muted hover:text-ink"
-        >
-          Bununla ilgili sor
-          <kbd className="border border-rule px-1 font-mono text-[11px]">Ctrl K</kbd>
-        </button>
-      )}
+      <div className="mt-4 -mb-1.5 flex items-center justify-between">
+        {state.status !== "loading" ? (
+          <button
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={onAsk}
+            className="flex items-center gap-2 text-xs text-muted hover:text-ink"
+          >
+            Bununla ilgili sor
+            <kbd className="border border-rule px-1 font-mono text-[11px]">Ctrl K</kbd>
+          </button>
+        ) : (
+          <span />
+        )}
+        <div className="-mr-3">
+          <HighlightSwatches current={highlightColor} onPick={onHighlight} />
+        </div>
+      </div>
     </div>
   );
 }

@@ -14,12 +14,20 @@ import {
   updateBook,
   type Book,
 } from "@/lib/file-store";
-import { deleteBookAnnotations, INK_COLORS, undo, type Tool } from "@/lib/annotations";
+import {
+  addAnnotation,
+  deleteBookAnnotations,
+  HIGHLIGHT_COLORS,
+  INK_COLORS,
+  newId,
+  undo,
+  type Tool,
+} from "@/lib/annotations";
 import type { Reference } from "@/lib/chat";
 import { deleteBookOcr, setOcrEnabled, useOcrEnabled } from "@/lib/ocr";
 import { getPageText, usePdfSearch } from "@/lib/pdf-search";
 import { loadProgress, saveProgress, toggleBookmark, useBookmarks } from "@/lib/reading-state";
-import { extractSelection, selectedPdfText } from "@/lib/selection";
+import { extractSelection, selectedPdfText, selectionHighlights } from "@/lib/selection";
 import { makeTextRenderer } from "@/lib/text-highlight";
 import type { Translation } from "@/lib/types";
 import { useSavedWords } from "@/lib/use-saved-words";
@@ -29,6 +37,7 @@ import Library from "./library";
 import ResizablePanel from "./resizable-panel";
 import ShortcutsDialog from "./shortcuts-dialog";
 import Toolbar from "./toolbar";
+import HighlightSwatches from "./highlight-swatches";
 import TranslationPopover, { type PopoverState } from "./translation-popover";
 import WordList from "./word-list";
 
@@ -69,6 +78,8 @@ export default function Reader() {
   // Not alma aracı (kalem, yazı, silgi); null iken normal okuma/seçim
   const [tool, setTool] = useState<Tool | null>(null);
   const [inkColor, setInkColor] = useState<string>(INK_COLORS[1]);
+  // Son kullanılan vurgu rengi (H kısayolu bununla vurgular)
+  const [highlightColor, setHighlightColor] = useState<string>(HIGHLIGHT_COLORS[0].color);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -321,6 +332,36 @@ export default function Reader() {
     setChatOpen(true);
   }, [pdf, file, key, closePopover]);
 
+  /** Vurgulanan metni sohbete referans olarak ekleyip sohbeti açar. */
+  const askAbout = useCallback(
+    (text: string, page: number) => {
+      lastSelectionRef.current = { text, page };
+      openChat();
+    },
+    [openChat],
+  );
+
+  /** Seçili metni vurgular; seçim yoksa false. */
+  const highlightSelection = useCallback(
+    (color: string) => {
+      const selection = window.getSelection();
+      if (!key || !selection) return false;
+      const pieces = selectionHighlights(selection);
+      if (!pieces.length) return false;
+      const createdAt = Date.now();
+      for (const { page, rects, text } of pieces) {
+        addAnnotation(key, page, { id: newId(), type: "highlight", color, rects, text, createdAt });
+      }
+      selection.removeAllRanges();
+      lastSelectionRef.current = null;
+      closePopover();
+      setAskChip(null);
+      setHighlightColor(color);
+      return true;
+    },
+    [key, closePopover],
+  );
+
   const toggleFocusMode = useCallback(() => {
     if (document.fullscreenElement) document.exitFullscreen();
     else document.documentElement.requestFullscreen?.().catch(() => setFocusMode((f) => !f));
@@ -430,6 +471,7 @@ export default function Reader() {
         d: () => setTool((t) => (t === "pen" ? null : "pen")),
         t: () => setTool((t) => (t === "text" ? null : "text")),
         e: () => setTool((t) => (t === "eraser" ? null : "eraser")),
+        h: () => highlightSelection(highlightColor),
       };
       const action = actions[e.key.length === 1 ? e.key.toLowerCase() : e.key];
       if (action) {
@@ -453,6 +495,8 @@ export default function Reader() {
     openSearch,
     openChat,
     toggleFocusMode,
+    highlightSelection,
+    highlightColor,
   ]);
 
   // --- Kelime seçimi ve çeviri -------------------------------------------
@@ -537,6 +581,8 @@ export default function Reader() {
             onQueryChange={setSearchQuery}
             search={search}
             searchInputRef={searchInputRef}
+            book={key}
+            onAsk={askAbout}
           />
         </div>
       )}
@@ -625,10 +671,12 @@ export default function Reader() {
               pageHeight={pageHeight}
               textRenderer={textRenderer}
               onLoad={handleLoad}
+              onGoTo={goTo}
               bookKey={key!}
               tool={tool}
               color={inkColor}
               ocr={ocrEnabled}
+              onAskHighlight={askAbout}
             />
           )}
         </div>
@@ -690,18 +738,28 @@ export default function Reader() {
         </div>
       )}
       {popover && (
-        <TranslationPopover state={popover} onClose={closePopover} onAsk={openChat} />
+        <TranslationPopover
+          state={popover}
+          onClose={closePopover}
+          onAsk={openChat}
+          highlightColor={highlightColor}
+          onHighlight={highlightSelection}
+        />
       )}
       {askChip && (
-        <button
+        <div
+          // Tıklayınca seçim kaybolmasın
           onMouseDown={(e) => e.preventDefault()}
-          onClick={openChat}
           style={{ left: askChip.x + 8, top: askChip.y + 14 }}
-          className="fixed z-30 flex items-center gap-2 border border-rule bg-sheet px-3 py-1.5 text-sm shadow-[0_4px_16px_var(--shadow)] hover:border-ink"
+          className="fixed z-30 flex items-center border border-rule bg-sheet text-sm shadow-[0_4px_16px_var(--shadow)]"
         >
-          Bu bölümü sor
-          <kbd className="font-mono text-[11px] text-muted">Ctrl K</kbd>
-        </button>
+          <button onClick={openChat} className="flex items-center gap-2 px-3 py-1.5 hover:text-ink">
+            Bu bölümü sor
+            <kbd className="font-mono text-[11px] text-muted">Ctrl K</kbd>
+          </button>
+          <span className="h-5 w-px bg-rule" />
+          <HighlightSwatches current={highlightColor} onPick={highlightSelection} />
+        </div>
       )}
       <ChatModal
         open={chatOpen}
@@ -710,6 +768,9 @@ export default function Reader() {
         onClearReference={() => setChatReference(null)}
         chatId={key ?? "genel"}
         title={file?.name.replace(/\.pdf$/i, "") ?? null}
+        pdf={pdf}
+        book={key}
+        currentPage={currentPage}
       />
       {showHelp && <ShortcutsDialog onClose={() => setShowHelp(false)} />}
     </div>

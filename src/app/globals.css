@@ -6,6 +6,8 @@
  */
 :root,
 [data-theme="light"] {
+  --hl-blend: multiply;
+  --hl-opacity: 0.35;
   --paper: #ece8df;
   --sheet: #f4f1ea;
   --ink: #2e2b27;
@@ -30,6 +32,8 @@
 }
 
 [data-theme="dark"] {
+  --hl-blend: screen;
+  --hl-opacity: 0.28;
   color-scheme: dark;
   --paper: #1c1b19;
   --sheet: #232220;
@@ -41,6 +45,39 @@
   --shadow: rgba(0, 0, 0, 0.4);
   /* Beyaz sayfayı koyu zemine çevirir; hue-rotate renkleri yaklaşık korur */
   --page-filter: invert(0.87) hue-rotate(180deg) sepia(0.15);
+}
+
+/* Monokai Pro (VS Code temasındaki varsayılan filtre) */
+[data-theme="monokai"] {
+  --hl-blend: screen;
+  --hl-opacity: 0.28;
+  color-scheme: dark;
+  --paper: #221f22;
+  --sheet: #2d2a2e;
+  --ink: #fcfcfa;
+  --muted: #939293;
+  --rule: #403e41;
+  --accent: #ffd866;
+  --mark: rgba(255, 216, 102, 0.28);
+  --shadow: rgba(0, 0, 0, 0.45);
+  /* Sayfayı Monokai'nin mor-gri zeminine yaklaştırır */
+  --page-filter: invert(0.83) hue-rotate(180deg) sepia(0.12) hue-rotate(250deg) saturate(1.1);
+}
+
+/* Monokai Pro Ristretto: aynı paletin sıcak, kahve tonlu filtresi */
+[data-theme="ristretto"] {
+  --hl-blend: screen;
+  --hl-opacity: 0.28;
+  color-scheme: dark;
+  --paper: #211c1c;
+  --sheet: #2c2525;
+  --ink: #fff1f3;
+  --muted: #948a8b;
+  --rule: #403838;
+  --accent: #f9cc6c;
+  --mark: rgba(249, 204, 108, 0.28);
+  --shadow: rgba(0, 0, 0, 0.45);
+  --page-filter: invert(0.83) hue-rotate(180deg) sepia(0.3) hue-rotate(-15deg);
 }
 
 @theme inline {
@@ -77,6 +114,13 @@ body {
   inset: 0;
   background: #fff;
   filter: var(--page-filter);
+}
+
+/* Fosforlu kalem: açık temalarda yazıyı koyultur, koyu temalarda zemini aydınlatır */
+.highlight-rect {
+  mix-blend-mode: var(--hl-blend, multiply);
+  opacity: var(--hl-opacity, 0.35);
+  border-radius: 2px;
 }
 
 .react-pdf__Page__canvas {

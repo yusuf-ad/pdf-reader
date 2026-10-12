@@ -194,3 +194,79 @@ function sentenceAround(text: string, start: number, end: number) {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+type Box = { left: number; top: number; right: number; bottom: number };
+
+/**
+ * Vurgu için: seçimin her sayfadaki satır dikdörtgenleri (sayfaya oranla) ve metni.
+ * Yalnızca metin düğümlerinin dikdörtgenleri alınır; pdf.js'in görünmez yardımcı
+ * elemanları (ör. .endOfContent) vurguya karışmasın. Birden fazla sayfaya taşan seçim
+ * sayfa başına ayrı vurgu olur.
+ */
+export function selectionHighlights(selection: Selection) {
+  if (selection.rangeCount === 0 || selection.isCollapsed) return [];
+  const range = selection.getRangeAt(0);
+  const root = range.commonAncestorContainer;
+  const pages = new Map<HTMLElement, { page: number; boxes: Box[]; text: string }>();
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes: Text[] =
+    root.nodeType === Node.TEXT_NODE ? [root as Text] : [];
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n as Text);
+
+  for (const node of nodes) {
+    if (!range.intersectsNode(node)) continue;
+    const layer = node.parentElement?.closest(".textLayer, .ocr-layer");
+    // Yakınlaştırırken arkada hazırlanan görünmez katmanı atla
+    if (!layer || layer.closest("[aria-hidden]")) continue;
+    const frame = layer.closest<HTMLElement>(".page-frame");
+    const fig = frame?.closest<HTMLElement>("[data-page-number]");
+    if (!frame || !fig) continue;
+
+    const part = document.createRange();
+    part.selectNodeContents(node);
+    if (node === range.startContainer) part.setStart(node, range.startOffset);
+    if (node === range.endContainer) part.setEnd(node, range.endOffset);
+    if (part.collapsed) continue;
+
+    let entry = pages.get(frame);
+    if (!entry) pages.set(frame, (entry = { page: Number(fig.dataset.pageNumber), boxes: [], text: "" }));
+    entry.text += part.toString() + " ";
+    for (const r of part.getClientRects()) {
+      if (r.width > 0.5 && r.height > 0.5) entry.boxes.push(r);
+    }
+  }
+
+  return [...pages].flatMap(([frame, { page, boxes, text }]) => {
+    const f = frame.getBoundingClientRect();
+    const rects = mergeLines(boxes).flatMap((b) => [
+      +((b.left - f.left) / f.width).toFixed(4),
+      +((b.top - f.top) / f.height).toFixed(4),
+      +((b.right - b.left) / f.width).toFixed(4),
+      +((b.bottom - b.top) / f.height).toFixed(4),
+    ]);
+    const clean = joinHyphenation(text).replace(/\s+/g, " ").trim();
+    return rects.length && clean ? [{ page, rects, text: clean }] : [];
+  });
+}
+
+/** Aynı satırdaki bitişik parçaları tek dikdörtgende birleştirir. */
+function mergeLines(boxes: Box[]) {
+  const sorted = [...boxes].sort((a, b) => a.top - b.top || a.left - b.left);
+  const out: Box[] = [];
+  for (const b of sorted) {
+    const line = out.find((o) => {
+      const overlap = Math.min(o.bottom, b.bottom) - Math.max(o.top, b.top);
+      const h = Math.min(o.bottom - o.top, b.bottom - b.top);
+      const gap = Math.max(b.left - o.right, o.left - b.right);
+      return overlap >= h * 0.5 && gap <= h;
+    });
+    if (line) {
+      line.left = Math.min(line.left, b.left);
+      line.right = Math.max(line.right, b.right);
+      line.top = Math.min(line.top, b.top);
+      line.bottom = Math.max(line.bottom, b.bottom);
+    } else out.push({ left: b.left, top: b.top, right: b.right, bottom: b.bottom });
+  }
+  return out;
+}

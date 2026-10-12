@@ -9,6 +9,7 @@ import type { Tool } from "@/lib/annotations";
 import { useOcr } from "@/lib/ocr";
 import { PDF_OPTIONS } from "@/lib/pdfjs"; // worker ayarını da yapar
 import AnnotationLayer from "./annotation-layer";
+import HighlightLayer from "./highlight-layer";
 import OcrTextLayer from "./ocr-text-layer";
 
 type Props = {
@@ -17,17 +18,21 @@ type Props = {
   pageHeight: number;
   textRenderer?: PageProps["customTextRenderer"];
   onLoad: (pdf: PDFDocumentProxy) => void;
+  /** PDF içindeki bağlantılar (ör. kitabın kendi içindekiler sayfası) */
+  onGoTo: (page: number) => void;
   /** Notların kaydedileceği kitap anahtarı */
   bookKey: string;
   tool: Tool | null;
   color: string;
   /** Taranmış sayfalarda metin tanıma açık mı */
   ocr: boolean;
+  /** Vurgulanan metni sohbete sor */
+  onAskHighlight: (text: string, page: number) => void;
 };
 
-type PageExtras = Pick<Props, "bookKey" | "tool" | "color" | "ocr">;
+type PageExtras = Pick<Props, "bookKey" | "tool" | "color" | "ocr" | "onAskHighlight">;
 
-export default function PdfViewer({ file, pageWidth, pageHeight, textRenderer, onLoad, ...annotation }: Props) {
+export default function PdfViewer({ file, pageWidth, pageHeight, textRenderer, onLoad, onGoTo, ...annotation }: Props) {
   const [numPages, setNumPages] = useState(0);
 
   return (
@@ -41,6 +46,8 @@ export default function PdfViewer({ file, pageWidth, pageHeight, textRenderer, o
         setNumPages(pdf.numPages);
         onLoad(pdf);
       }}
+      // Sayfalar ekrana yaklaşınca çizildiği için react-pdf hedef sayfayı kendi bulamıyor
+      onItemClick={({ pageNumber }) => onGoTo(pageNumber)}
       loading={<p className="py-16 text-center text-sm text-muted">Açılıyor…</p>}
       error={<p className="py-16 text-center text-sm text-accent">Bu PDF açılamadı.</p>}
       // w-fit + mx-auto: yakınlaştırınca sayfa taşarsa sol kenar kesilmesin, yatay kaydırılabilsin
@@ -158,6 +165,16 @@ function LazyPage({
           <span className="pointer-events-none absolute top-2 right-2 z-20 bg-sheet/90 px-2 py-0.5 text-[11px] text-muted">
             Metin tanınıyor…
           </span>
+        )}
+        {visible && (
+          <HighlightLayer
+            book={annotation.bookKey}
+            page={pageNumber}
+            width={width}
+            height={frameHeight}
+            tool={annotation.tool}
+            onAsk={annotation.onAskHighlight}
+          />
         )}
         {visible && (
           <AnnotationLayer

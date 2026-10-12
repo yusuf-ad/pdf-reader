@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 
-// Sayfalara eklenen kalem çizgileri ve yazılar (kitap başına localStorage).
+// Sayfalara eklenen kalem çizgileri, yazılar ve metin vurguları (kitap başına localStorage).
 // Koordinatlar sayfa genişliği/yüksekliğine oranlanır (0–1); böylece her yakınlaştırmada
 // aynı yere düşer. Kalınlık ve yazı boyutu sayfa genişliğine oranlıdır.
 
@@ -29,7 +29,25 @@ export type Note = {
   text: string;
 };
 
-export type Annotation = Stroke | Note;
+/** Fosforlu kalemle vurgulanan metin; her satır bir dikdörtgen. */
+export type Highlight = {
+  id: string;
+  type: "highlight";
+  color: string;
+  /** x, y, genişlik, yükseklik, … (sayfaya oranla) */
+  rects: number[];
+  text: string;
+  createdAt: number;
+};
+
+export const HIGHLIGHT_COLORS = [
+  { color: "#f5c518", label: "Sarı" },
+  { color: "#7bc96f", label: "Yeşil" },
+  { color: "#5aa9e6", label: "Mavi" },
+  { color: "#f27aa6", label: "Pembe" },
+] as const;
+
+export type Annotation = Stroke | Note | Highlight;
 
 type BookAnnotations = Record<number, Annotation[]>;
 
@@ -86,12 +104,40 @@ export function usePageAnnotations(book: string | null, page: number) {
   );
 }
 
+const EMPTY_BOOK: BookAnnotations = {};
+
+/** Kitabın tüm sayfalarındaki notlar (vurgu listesi için). */
+export function useBookAnnotations(book: string | null) {
+  return useSyncExternalStore(
+    subscribe,
+    () => (book ? load(book) : EMPTY_BOOK),
+    () => EMPTY_BOOK,
+  );
+}
+
 const current = (book: string, page: number) => load(book)[page] ?? EMPTY;
 
 export const newId = () => Math.random().toString(36).slice(2, 10);
 
 export function addAnnotation(book: string, page: number, item: Annotation) {
   write(book, page, [...current(book, page), item]);
+}
+
+export function updateHighlight(book: string, page: number, id: string, patch: Partial<Highlight>) {
+  write(
+    book,
+    page,
+    current(book, page).map((a) => (a.id === id && a.type === "highlight" ? { ...a, ...patch } : a)),
+  );
+}
+
+/** Nokta (sayfaya oranla) vurgunun bir satırının içindeyse true. */
+export function highlightHit(h: Highlight, x: number, y: number) {
+  const r = h.rects;
+  for (let i = 0; i < r.length; i += 4) {
+    if (x >= r[i] && x <= r[i] + r[i + 2] && y >= r[i + 1] && y <= r[i + 1] + r[i + 3]) return true;
+  }
+  return false;
 }
 
 export function updateNote(book: string, page: number, id: string, patch: Partial<Note>) {

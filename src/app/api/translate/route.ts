@@ -34,7 +34,7 @@ export async function POST(req: Request) {
 
   try {
     const { output } = await generateText({
-      model: openai(process.env.OPENAI_MODEL || "gpt-4o-mini"),
+      model: openai(process.env.OPENAI_MODEL || "gpt-6-luna"),
       output: Output.object({ schema: translationSchema }),
       system:
         "Sen deneyimli bir çevirmen ve sözlüksün. Kullanıcı bir PDF okurken bir kelime ya da ifade seçiyor. " +

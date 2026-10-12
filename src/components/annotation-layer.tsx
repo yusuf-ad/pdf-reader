@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   addAnnotation,
+  highlightHit,
   newId,
   removeAnnotations,
   strokeHit,
@@ -56,7 +57,11 @@ export default function AnnotationLayer({ book, page, width: w, height: h, tool,
   const erase = (e: React.PointerEvent) => {
     const { x, y } = point(e);
     const ids = items
-      .filter((a) => a.type === "ink" && strokeHit(a, x, y, w, h, ERASER_RADIUS))
+      .filter(
+        (a) =>
+          (a.type === "ink" && strokeHit(a, x, y, w, h, ERASER_RADIUS)) ||
+          (a.type === "highlight" && highlightHit(a, x / w, y / h)),
+      )
       .map((a) => a.id);
     for (const el of document.elementsFromPoint(e.clientX, e.clientY)) {
       const id = el.closest<HTMLElement>("[data-note-id]")?.dataset.noteId;
