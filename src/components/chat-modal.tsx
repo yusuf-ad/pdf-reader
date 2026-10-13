@@ -14,6 +14,7 @@ import {
   type BookContext,
 } from "@/lib/book-context";
 import { splitSuggestions, type ChatMessage, type Reference } from "@/lib/chat";
+import { loadGeneratedToc } from "@/lib/generated-toc";
 import { getPageText } from "@/lib/pdf-search";
 import { parseSkill, SKILLS, skillLabel, type SkillRequest } from "@/lib/skills";
 
@@ -104,7 +105,8 @@ function ChatWindow({ open, onClose, reference, onClearReference, chatId, title,
         profile,
         page: currentPage,
         numPages: pdf.numPages,
-        chapter: chapterAt(info.outline, currentPage),
+        // Gömülü içindekiler yoksa kullanıcının oluşturduğu içindekiler
+        chapter: chapterAt(info.outline.length ? info.outline : (loadGeneratedToc(book) ?? []), currentPage),
         pageText: pageText.trim().slice(0, PAGE_TEXT_CHARS) || null,
       },
     };

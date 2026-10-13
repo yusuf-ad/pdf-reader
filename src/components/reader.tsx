@@ -24,6 +24,7 @@ import {
   type Tool,
 } from "@/lib/annotations";
 import type { Reference } from "@/lib/chat";
+import { deleteGeneratedToc } from "@/lib/generated-toc";
 import { deleteBookOcr, setOcrEnabled, useOcrEnabled } from "@/lib/ocr";
 import { getPageText, usePdfSearch } from "@/lib/pdf-search";
 import { loadProgress, saveProgress, toggleBookmark, useBookmarks } from "@/lib/reading-state";
@@ -726,6 +727,7 @@ export default function Reader() {
               await removeBook(k);
               deleteBookAnnotations(k);
               deleteBookOcr(k);
+              deleteGeneratedToc(k);
               if (k === key) {
                 setFile(null);
                 setPdf(null);

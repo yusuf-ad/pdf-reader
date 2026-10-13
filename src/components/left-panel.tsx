@@ -3,6 +3,8 @@
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { useEffect, useState, type RefObject } from "react";
 import { removeAnnotations, useBookAnnotations, type Highlight } from "@/lib/annotations";
+import { generateToc, useGeneratedToc } from "@/lib/generated-toc";
+import { getPageText } from "@/lib/pdf-search";
 import type { SearchHit } from "@/lib/pdf-search";
 
 export type LeftTab = "contents" | "bookmarks" | "highlights" | "search";
@@ -57,7 +59,7 @@ export default function LeftPanel(props: Props) {
         ))}
       </nav>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {tab === "contents" && <Contents pdf={props.pdf} onGoTo={props.onGoTo} />}
+        {tab === "contents" && <Contents pdf={props.pdf} book={props.book} onGoTo={props.onGoTo} />}
         {tab === "bookmarks" && <Bookmarks {...props} />}
         {tab === "highlights" && <Highlights {...props} />}
         {tab === "search" && <SearchTab {...props} />}
@@ -80,7 +82,15 @@ async function resolvePage(pdf: PDFDocumentProxy, dest: OutlineEntry["dest"]) {
   return (await pdf.getPageIndex(ref as Parameters<PDFDocumentProxy["getPageIndex"]>[0])) + 1;
 }
 
-function Contents({ pdf, onGoTo }: { pdf: PDFDocumentProxy | null; onGoTo: (page: number) => void }) {
+function Contents({
+  pdf,
+  book,
+  onGoTo,
+}: {
+  pdf: PDFDocumentProxy | null;
+  book: string | null;
+  onGoTo: (page: number) => void;
+}) {
   const [outline, setOutline] = useState<{ pdf: PDFDocumentProxy; items: OutlineEntry[] } | null>(null);
 
   useEffect(() => {
@@ -95,7 +105,7 @@ function Contents({ pdf, onGoTo }: { pdf: PDFDocumentProxy | null; onGoTo: (page
   }, [pdf]);
 
   if (!pdf || outline?.pdf !== pdf) return <Empty>Yükleniyor…</Empty>;
-  if (!outline.items.length) return <Empty>Bu PDF&apos;te içindekiler bilgisi yok.</Empty>;
+  if (!outline.items.length) return <GeneratedContents pdf={pdf} book={book} onGoTo={onGoTo} />;
 
   return (
     <ul className="py-2 text-sm">
@@ -116,6 +126,91 @@ function Contents({ pdf, onGoTo }: { pdf: PDFDocumentProxy | null; onGoTo: (page
         </li>
       ))}
     </ul>
+  );
+}
+
+/**
+ * PDF'te gömülü içindekiler yoksa: basılı içindekiler sayfası yapay zekayla okunur.
+ * İstek yalnızca düğmeye basınca gider; sonuç kitap başına saklanır.
+ */
+function GeneratedContents({
+  pdf,
+  book,
+  onGoTo,
+}: {
+  pdf: PDFDocumentProxy;
+  book: string | null;
+  onGoTo: (page: number) => void;
+}) {
+  const items = useGeneratedToc(book);
+  const [state, setState] = useState<{ status: "idle" | "loading" | "missing" | "error"; error?: string }>({
+    status: "idle",
+  });
+
+  const generate = async () => {
+    if (!book) return;
+    setState({ status: "loading" });
+    try {
+      const result = await generateToc(pdf, book, (p) => getPageText(pdf, p, book));
+      setState({ status: result ? "idle" : "missing" });
+    } catch (e) {
+      setState({ status: "error", error: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  const loading = state.status === "loading";
+
+  if (items && !loading) {
+    return (
+      <div className="text-sm">
+        <ul className="py-2">
+          {items.map((item, i) => (
+            <li key={i}>
+              <button
+                onClick={() => item.page && onGoTo(item.page)}
+                disabled={!item.page}
+                style={{ paddingLeft: 20 + item.depth * 14 }}
+                className={`flex w-full gap-2 py-1.5 pr-5 text-left leading-snug hover:bg-ink/5 disabled:hover:bg-transparent ${
+                  item.depth === 0 ? "font-serif text-[15px]" : "text-muted hover:text-ink"
+                }`}
+              >
+                <span className="flex-1">{item.title}</span>
+                {item.page && <span className="text-xs tabular-nums text-muted">{item.page}</span>}
+              </button>
+            </li>
+          ))}
+        </ul>
+        <p className="border-t border-rule px-5 py-3 text-xs leading-relaxed text-muted">
+          Kitabın basılı içindekiler sayfasından otomatik çıkarıldı; sayfalar birkaç sayfa kayabilir.{" "}
+          <button onClick={generate} className="underline underline-offset-2 hover:text-ink">
+            Yeniden oluştur
+          </button>
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-5 py-6 text-sm text-muted">
+      <p>Bu PDF&apos;te içindekiler bilgisi yok.</p>
+      <p className="mt-2 text-xs leading-relaxed">
+        Kitabın basılı içindekiler sayfası varsa yapay zekayla okunup buraya tıklanabilir liste olarak
+        eklenebilir. Kitap başına bir kez yapılır.
+      </p>
+      <button
+        onClick={generate}
+        disabled={loading || !book}
+        className="mt-4 border border-rule px-3 py-1.5 text-ink transition-colors hover:border-ink disabled:animate-pulse disabled:hover:border-rule"
+      >
+        {loading ? "İçindekiler çıkarılıyor…" : "İçindekileri oluştur"}
+      </button>
+      {state.status === "missing" && (
+        <p className="mt-3 text-xs text-accent">
+          İlk sayfalarda basılı bir içindekiler listesi bulunamadı.
+        </p>
+      )}
+      {state.status === "error" && <p className="mt-3 text-xs text-accent">{state.error}</p>}
+    </div>
   );
 }
 
