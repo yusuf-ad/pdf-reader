@@ -4,6 +4,7 @@ import { useState, type ReactNode, type RefObject } from "react";
 import { HIGHLIGHT_COLORS, INK_COLORS, type Tool } from "@/lib/annotations";
 import {
   BookmarkIcon,
+  CropIcon,
   EraserIcon,
   ExpandIcon,
   FitPageIcon,
@@ -47,6 +48,9 @@ type Props = {
   color: string;
   onColor: (color: string) => void;
   onUndo: () => void;
+  /** Soru kırpma modu */
+  cropping: boolean;
+  onCrop: () => void;
   ocr: boolean;
   onToggleOcr: () => void;
   onSave: (saveAs: boolean) => void;
@@ -144,6 +148,14 @@ export default function Toolbar(p: Props) {
 
       <Divider />
 
+      <IconButton
+        label="Yapamadığım soruyu kırp  Q  (sayfada çerçevele, Esc: vazgeç)"
+        active={p.cropping}
+        onClick={p.onCrop}
+        highlight
+      >
+        <CropIcon />
+      </IconButton>
       <IconButton label="Yer imi  B" active={p.bookmarked} onClick={p.onToggleBookmark}>
         <BookmarkIcon filled={p.bookmarked} />
       </IconButton>

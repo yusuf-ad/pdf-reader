@@ -9,6 +9,7 @@ import type { Tool } from "@/lib/annotations";
 import { useOcr } from "@/lib/ocr";
 import { PDF_OPTIONS } from "@/lib/pdfjs"; // worker ayarını da yapar
 import AnnotationLayer from "./annotation-layer";
+import CropLayer, { type CropRegion } from "./crop-layer";
 import HighlightLayer from "./highlight-layer";
 import OcrTextLayer from "./ocr-text-layer";
 
@@ -28,9 +29,11 @@ type Props = {
   ocr: boolean;
   /** Vurgulanan metni sohbete sor */
   onAskHighlight: (text: string, page: number) => void;
+  /** Soru kırpma açıkken verilir */
+  onCrop?: (page: number, region: CropRegion) => void;
 };
 
-type PageExtras = Pick<Props, "bookKey" | "tool" | "color" | "ocr" | "onAskHighlight">;
+type PageExtras = Pick<Props, "bookKey" | "tool" | "color" | "ocr" | "onAskHighlight" | "onCrop">;
 
 export default function PdfViewer({ file, pageWidth, pageHeight, textRenderer, onLoad, onGoTo, ...annotation }: Props) {
   const [numPages, setNumPages] = useState(0);
@@ -185,6 +188,9 @@ function LazyPage({
             tool={annotation.tool}
             color={annotation.color}
           />
+        )}
+        {visible && annotation.onCrop && (
+          <CropLayer page={pageNumber} width={width} height={frameHeight} onCrop={annotation.onCrop} />
         )}
       </div>
       <figcaption className="mt-2 text-center text-xs tabular-nums text-muted">

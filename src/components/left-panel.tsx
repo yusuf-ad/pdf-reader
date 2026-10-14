@@ -6,8 +6,9 @@ import { removeAnnotations, useBookAnnotations, type Highlight } from "@/lib/ann
 import { generateToc, useGeneratedToc } from "@/lib/generated-toc";
 import { getPageText } from "@/lib/pdf-search";
 import type { SearchHit } from "@/lib/pdf-search";
+import { QuestionsTab } from "./questions";
 
-export type LeftTab = "contents" | "bookmarks" | "highlights" | "search";
+export type LeftTab = "contents" | "bookmarks" | "highlights" | "questions" | "search";
 
 type Search = {
   hits: SearchHit[];
@@ -32,12 +33,15 @@ type Props = {
   book: string | null;
   /** Vurgulanan metni sohbete sor */
   onAsk: (text: string, page: number) => void;
+  /** Sayfadan soru kırpmayı başlat */
+  onStartCrop: () => void;
 };
 
 const TABS: [LeftTab, string][] = [
   ["contents", "İçindekiler"],
   ["bookmarks", "Yer imleri"],
   ["highlights", "Vurgular"],
+  ["questions", "Sorular"],
   ["search", "Ara"],
 ];
 
@@ -45,7 +49,8 @@ export default function LeftPanel(props: Props) {
   const { tab, onTabChange } = props;
   return (
     <aside className="flex h-full min-h-0 flex-col border-r border-rule bg-sheet">
-      <nav className="flex gap-3 border-b border-rule px-4 text-[13px]">
+      {/* Dar panelde sekmeler kaydırma çubuğu yerine alt satıra geçer */}
+      <nav className="flex flex-wrap gap-x-3 border-b border-rule px-4 text-[13px] whitespace-nowrap">
         {TABS.map(([id, label]) => (
           <button
             key={id}
@@ -62,6 +67,9 @@ export default function LeftPanel(props: Props) {
         {tab === "contents" && <Contents pdf={props.pdf} book={props.book} onGoTo={props.onGoTo} />}
         {tab === "bookmarks" && <Bookmarks {...props} />}
         {tab === "highlights" && <Highlights {...props} />}
+        {tab === "questions" && (
+          <QuestionsTab book={props.book} onGoTo={props.onGoTo} onStartCrop={props.onStartCrop} />
+        )}
         {tab === "search" && <SearchTab {...props} />}
       </div>
     </aside>

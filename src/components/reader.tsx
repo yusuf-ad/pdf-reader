@@ -30,14 +30,17 @@ import { deleteBookChatNotes } from "@/lib/chat-notes";
 import { deleteGeneratedToc } from "@/lib/generated-toc";
 import { deleteBookOcr, setOcrEnabled, useOcrEnabled } from "@/lib/ocr";
 import { getPageText, usePdfSearch } from "@/lib/pdf-search";
+import { cropPage, type NewQuestion } from "@/lib/questions";
 import { loadProgress, saveProgress, toggleBookmark, useBookmarks } from "@/lib/reading-state";
 import { extractSelection, selectedPdfText, selectionHighlights } from "@/lib/selection";
 import { makeTextRenderer } from "@/lib/text-highlight";
 import type { SavedWord, Translation } from "@/lib/types";
 import { useSavedWords } from "@/lib/use-saved-words";
 import ChatModal from "./chat-modal";
+import type { CropRegion } from "./crop-layer";
 import LeftPanel, { type LeftTab } from "./left-panel";
 import Library from "./library";
+import { QuestionDialog } from "./questions";
 import ResizablePanel from "./resizable-panel";
 import ShortcutsDialog from "./shortcuts-dialog";
 import Toolbar from "./toolbar";
@@ -82,6 +85,9 @@ export default function Reader() {
   // Not alma aracı (kalem, yazı, silgi); null iken normal okuma/seçim
   const [tool, setTool] = useState<Tool | null>(null);
   const [inkColor, setInkColor] = useState<string>(INK_COLORS[1]);
+  // Soru kırpma modu ve kaydedilmeyi bekleyen soru görüntüsü
+  const [cropping, setCropping] = useState(false);
+  const [questionDraft, setQuestionDraft] = useState<Omit<NewQuestion, "folderId" | "note"> | null>(null);
   // Son kullanılan vurgu rengi (H kısayolu bununla vurgular)
   const [highlightColor, setHighlightColor] = useState<string>(HIGHLIGHT_COLORS[0].color);
   const [saving, setSaving] = useState(false);
@@ -433,6 +439,51 @@ export default function Reader() {
     };
   }, [key]);
 
+  // --- Yapamadığım sorular ----------------------------------------------
+
+  const startCrop = useCallback(() => {
+    setTool(null);
+    closePopover();
+    setAskChip(null);
+    window.getSelection()?.removeAllRanges();
+    setCropping((c) => !c);
+  }, [closePopover]);
+
+  const handleCrop = useCallback(
+    async (page: number, region: CropRegion) => {
+      setCropping(false);
+      if (!pdf || !file) return;
+      try {
+        const image = await cropPage(pdf, page, region);
+        setQuestionDraft({ image, book: key, bookName: file.name, page });
+      } catch (err) {
+        alert(`Soru kırpılamadı: ${(err as Error).message}`);
+      }
+    },
+    [pdf, file, key],
+  );
+
+  /** Dışarıdan gelen görüntü (yapıştırma, sürükleme) soru olarak eklenir. */
+  const addQuestionImage = useCallback(
+    (image: Blob) => setQuestionDraft({ image, book: key, bookName: file?.name ?? null, page: null }),
+    [key, file],
+  );
+
+  // Ctrl V: panodaki ekran görüntüsü
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
+      if (chatOpen || libraryOpen || questionDraft) return;
+      const image = [...(e.clipboardData?.files ?? [])].find((f) => f.type.startsWith("image/"));
+      if (!image) return;
+      e.preventDefault();
+      addQuestionImage(image);
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [chatOpen, libraryOpen, questionDraft, addQuestionImage]);
+
   const toggleFocusMode = useCallback(() => {
     if (document.fullscreenElement) document.exitFullscreen();
     else document.documentElement.requestFullscreen?.().catch(() => setFocusMode((f) => !f));
@@ -476,8 +527,8 @@ export default function Reader() {
         else openChat();
         return;
       }
-      // Sohbet açıkken arkadaki okuyucu kısayolları çalışmasın
-      if (chatOpen) return;
+      // Sohbet / soru penceresi açıkken arkadaki okuyucu kısayolları çalışmasın
+      if (chatOpen || questionDraft) return;
 
       if (!typing && !mod && file && (e.key.toLowerCase() === "l" || (libraryOpen && e.key === "Escape"))) {
         e.preventDefault();
@@ -523,6 +574,7 @@ export default function Reader() {
       if (e.key === "Escape" && !typing) {
         setAskChip(null);
         setTool(null);
+        setCropping(false);
       }
       if (typing || mod || e.altKey) return;
 
@@ -544,6 +596,7 @@ export default function Reader() {
         p: fitPage,
         "[": () => setLeftOpen((o) => !o),
         "]": () => setRightOpen((o) => !o),
+        q: startCrop,
         d: () => setTool((t) => (t === "pen" ? null : "pen")),
         m: () => setTool((t) => (t === "marker" ? null : "marker")),
         t: () => setTool((t) => (t === "text" ? null : "text")),
@@ -564,6 +617,7 @@ export default function Reader() {
     currentPage,
     numPages,
     chatOpen,
+    questionDraft,
     libraryOpen,
     goTo,
     zoomBy,
@@ -575,13 +629,14 @@ export default function Reader() {
     highlightSelection,
     highlightColor,
     savePdfWithNotes,
+    startCrop,
   ]);
 
   // --- Kelime seçimi ve çeviri -------------------------------------------
 
   const handleMouseUp = async (e: React.MouseEvent) => {
-    // Çizerken / yazarken çeviri açılmasın
-    if (tool) return;
+    // Çizerken / yazarken / kırparken çeviri açılmasın
+    if (tool || cropping) return;
     const { clientX: x, clientY: y } = e;
     // Seçimin tamamlanmasını bekle
     await new Promise((r) => setTimeout(r, 0));
@@ -643,7 +698,7 @@ export default function Reader() {
   return (
     <div className="flex h-screen">
       {file && leftOpen && showPanels && (
-        <div className="w-72 shrink-0">
+        <ResizablePanel id="left" edge="right" defaultWidth={300} minWidth={240}>
           <LeftPanel
             tab={leftTab}
             onTabChange={(tab) => {
@@ -661,8 +716,9 @@ export default function Reader() {
             searchInputRef={searchInputRef}
             book={key}
             onAsk={askAbout}
+            onStartCrop={startCrop}
           />
-        </div>
+        </ResizablePanel>
       )}
 
       <main
@@ -678,6 +734,9 @@ export default function Reader() {
           e.preventDefault();
           setDragging(false);
           const files = [...e.dataTransfer.files];
+          // Görüntü bırakılırsa yapamadığım soru olarak eklenir
+          const image = files.find((f) => f.type.startsWith("image/"));
+          if (image && file) return addQuestionImage(image);
           // Okurken tek dosya bırakılırsa aç; birden fazlası kitaplığa eklenir
           if (files.length === 1) openFile(files[0]);
           else addFiles(files);
@@ -724,6 +783,7 @@ export default function Reader() {
             tool={tool}
             onTool={(t) => {
               setTool(t);
+              setCropping(false);
               closePopover();
               setAskChip(null);
             }}
@@ -731,6 +791,8 @@ export default function Reader() {
             color={tool === "marker" ? highlightColor : inkColor}
             onColor={tool === "marker" ? setHighlightColor : setInkColor}
             onUndo={() => key && undo(key)}
+            cropping={cropping}
+            onCrop={startCrop}
             ocr={ocrEnabled}
             onToggleOcr={() => key && setOcrEnabled(key, !ocrEnabled)}
             onSave={savePdfWithNotes}
@@ -760,9 +822,16 @@ export default function Reader() {
               color={tool === "marker" ? highlightColor : inkColor}
               ocr={ocrEnabled}
               onAskHighlight={askAbout}
+              onCrop={cropping ? handleCrop : undefined}
             />
           )}
         </div>
+
+        {cropping && (
+          <div className="pointer-events-none absolute top-16 left-1/2 z-20 -translate-x-1/2 border border-rule bg-sheet px-3 py-1.5 text-xs shadow-[0_4px_16px_var(--shadow)]">
+            Soruyu fareyle çerçevele · <span className="font-mono">Esc</span> vazgeç
+          </div>
+        )}
 
         {focusMode && numPages > 0 && (
           <div className="pointer-events-none absolute right-6 bottom-4 bg-sheet/90 px-3 py-1 text-xs tabular-nums text-muted">
@@ -860,6 +929,17 @@ export default function Reader() {
         book={key}
         currentPage={currentPage}
       />
+      {questionDraft && (
+        <QuestionDialog
+          draft={questionDraft}
+          onClose={() => setQuestionDraft(null)}
+          onSaved={() => {
+            setQuestionDraft(null);
+            setLeftOpen(true);
+            setLeftTab("questions");
+          }}
+        />
+      )}
       {showHelp && <ShortcutsDialog onClose={() => setShowHelp(false)} />}
     </div>
   );
