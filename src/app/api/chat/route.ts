@@ -2,6 +2,7 @@ import { openai } from "@ai-sdk/openai";
 import { convertToModelMessages, generateText, streamText } from "ai";
 import {
   formatBookContext,
+  MARKS_CHARS,
   PAGE_TEXT_CHARS,
   type BookContext,
 } from "@/lib/book-context";
@@ -38,6 +39,7 @@ const SYSTEM = `Sen bir okuma asistanısın. Kullanıcı bir kitap/PDF okuyor ve
   - Tarih, felsefe vb.: geçen kişi, olay ve kavramlara okumayı kolaylaştıracak kadar arka plan ver.
 - Varsayılan olarak Türkçe cevap ver; kullanıcı başka dil isterse ona uy. Kısa ve net ol.
 - Metinde olmayan bir şeyi metindeymiş gibi söyleme; genel bilgini kullandığında bunu belli et.
+- Kullanıcının kitapta işaretlediği yerler <isaretler> içinde gelir: sayfa, renk, işaretin altındaki yazı ve geçtiği yer (işaretli satırdan başlayan metin). "İşaretlediğim", "sarıyla işaretli", "yanlış yaptığım sorular" gibi ifadeleri buna göre yorumla; ör. soru numarası işaretliyse o soru, geçtiği yerde başlayan sorudur. Rengin anlamını kullanıcı söylemediyse varsayma. Geçtiği yer kesik olabilir; eksik kısmı uydurma.
 - Kullanıcı görsel (genelde ekran görüntüsü) ekleyebilir. Görseldeki yazıyı dikkatle oku. Soru yoksa: yazıyı aynen aktar, Türkçe çevirisini ver ve kısaca açıkla. Okuyamadığın kısımları uydurma, okunamadığını söyle.
 - Kullanıcı test, quiz ya da soru çözmek isterse createQuiz aracını çağır; soruları okuduğu kitabın verilen metnine (<belge>, <sayfa_metni>, <acik_sayfa>, <secili_metin>) dayandır, soruları ayrıca metin olarak yazma. Kaç soru istediğini söylemediyse 5 soru hazırla. Metin yoksa ya da yetersizse test uydurma, bunu söyle.
 - Her cevabın en sonuna, kullanıcının bir sonraki adımda sorabileceği 3 kısa takip sorusu ekle. Sorular bu cevaba ve kitaba özgü olsun, kullanıcının ağzından yazılsın, her biri en fazla 12 kelime. Tam olarak şu biçimde ve cevabın en sonunda:
@@ -130,6 +132,7 @@ function bookBlock(book: BookContext, lastMessage: ChatMessage | undefined) {
     numPages: Number(book.numPages) || 0,
     chapter: clip(book.chapter, 500),
     pageText: clip(book.pageText, PAGE_TEXT_CHARS),
+    marks: clip(book.marks, MARKS_CHARS),
   };
   const free =
     !lastMessage?.metadata?.reference && !lastMessage?.metadata?.skill;

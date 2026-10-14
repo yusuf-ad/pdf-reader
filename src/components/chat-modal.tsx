@@ -16,6 +16,7 @@ import {
 import { addChatNote, removeChatNote, useChatNotes } from "@/lib/chat-notes";
 import { splitSuggestions, type ChatMessage, type Reference } from "@/lib/chat";
 import { loadGeneratedToc } from "@/lib/generated-toc";
+import { getMarksText } from "@/lib/marks";
 import { getPageText } from "@/lib/pdf-search";
 import { parseQuizRequest, parseSkill, SKILLS, skillLabel, type SkillRequest } from "@/lib/skills";
 import Quiz from "./quiz";
@@ -114,10 +115,11 @@ function ChatWindow({
   /** Her isteğe eklenen kitap bilgisi: künye, profil, açık bölüm ve sayfa. */
   const bookBody = async (): Promise<{ book?: BookContext }> => {
     if (!pdf || !book) return {};
-    const [info, profile, pageText] = await Promise.all([
+    const [info, profile, pageText, marks] = await Promise.all([
       getBookInfo(pdf),
       getBookProfile(pdf, book, title, (p) => getPageText(pdf, p, book)),
       getPageText(pdf, currentPage, book).catch(() => ""),
+      getMarksText(pdf, book, currentPage).catch(() => null),
     ]);
     return {
       book: {
@@ -130,6 +132,7 @@ function ChatWindow({
         // Gömülü içindekiler yoksa kullanıcının oluşturduğu içindekiler
         chapter: chapterAt(info.outline.length ? info.outline : (loadGeneratedToc(book) ?? []), currentPage),
         pageText: pageText.trim().slice(0, PAGE_TEXT_CHARS) || null,
+        marks,
       },
     };
   };

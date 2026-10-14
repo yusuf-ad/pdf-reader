@@ -18,6 +18,8 @@ export type BookContext = {
   chapter: string | null;
   /** Açık sayfanın metni; seçili metin yoksa "bu", "burada" gibi ifadeler buna göre yorumlanır */
   pageText: string | null;
+  /** Kullanıcının kitaptaki işaretleri (vurgu, fosforlu kalem, sayfa notları) ve altlarındaki yazı */
+  marks?: string | null;
 };
 
 /** Profil çıkarmak için sunucuya giden ham bilgi. */
@@ -31,6 +33,7 @@ export type ProfileRequest = {
 };
 
 export const PAGE_TEXT_CHARS = 5000;
+export const MARKS_CHARS = 16000;
 const SAMPLE_PAGES = 12;
 const SAMPLE_PAGE_CHARS = 2000;
 const OUTLINE_ITEMS = 200;
@@ -168,5 +171,6 @@ export function formatBookContext(b: BookContext, includePage: boolean) {
     b.chapter && `Açık bölüm: ${b.chapter}`,
   ].filter(Boolean);
   const page = includePage && b.pageText ? `\n<acik_sayfa sayfa="${b.page}">\n${b.pageText}\n</acik_sayfa>` : "";
-  return `<kitap>\n${lines.join("\n")}\n</kitap>${page}`;
+  const marks = b.marks ? `\n<isaretler>\n${b.marks}\n</isaretler>` : "";
+  return `<kitap>\n${lines.join("\n")}\n</kitap>${page}${marks}`;
 }
