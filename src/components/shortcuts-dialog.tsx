@@ -19,9 +19,12 @@ const SHORTCUTS: [string, string][] = [
   ["[  /  ]", "Sol paneli / kelime listesini aç-kapat"],
   ["Çift tık", "Kelimeyi seç ve çevir"],
   ["H", "Seçili metni vurgula (vurguya tıkla: renk, sor, sil)"],
-  ["D  /  T  /  E", "Kalem / yazı ekle / silgi (Esc ile bırak)"],
+  ["D  /  M  /  T  /  E", "Kalem / fosforlu kalem / yazı ekle / silgi (Esc ile bırak)"],
+  ["Shift + sürükle", "Fosforlu kalemle düz çizgi"],
   ["Sağ tık basılı", "Kalem / yazı açıkken geçici silgi"],
   ["Ctrl + Z", "Son çizimi / yazıyı / vurguyu geri al"],
+  ["Ctrl + S", "Notları PDF'e yazıp kaydet (son kaydedilen dosyaya)"],
+  ["Ctrl + Shift + S", "Farklı kaydet (yeni yer seç)"],
   ["Esc", "Açık pencereyi kapat"],
   ["?", "Bu listeyi göster"],
 ];

@@ -17,6 +17,8 @@ import {
 // Sayfa genişliğine oranla: 820px genişlikte ~2.3px kalem, ~16px yazı
 const PEN_WIDTH = 0.0028;
 const TEXT_SIZE = 0.02;
+// Fosforlu kalem: bir satır yazıyı kaplayacak kadar (~13px)
+const MARKER_WIDTH = 0.016;
 const ERASER_RADIUS = 8;
 // Bu kadar px'ten yakın noktalar atlanır (kayıt küçük kalsın)
 const MIN_POINT_GAP = 1.5;
@@ -25,7 +27,12 @@ const ERASER_CURSOR = `url("data:image/svg+xml,${encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18"><circle cx="9" cy="9" r="7.5" fill="white" fill-opacity=".6" stroke="black"/></svg>`,
 )}") 9 9, cell`;
 
-const CURSORS: Record<Tool, string> = { pen: "crosshair", text: "text", eraser: ERASER_CURSOR };
+const CURSORS: Record<Tool, string> = {
+  pen: "crosshair",
+  marker: "crosshair",
+  text: "text",
+  eraser: ERASER_CURSOR,
+};
 
 type Props = {
   book: string;
@@ -114,7 +121,13 @@ export default function AnnotationLayer({ book, page, width: w, height: h, tool,
   const onPointerMove = (e: React.PointerEvent) => {
     if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
     if (active === "eraser") return erase(e);
-    if (active !== "pen") return;
+    if (active !== "pen" && active !== "marker") return;
+    // Shift basılıyken fosforlu kalem düz çizer (satırın altını çizmek gibi)
+    if (active === "marker" && e.shiftKey) {
+      const { x, y } = point(e);
+      setDraft((pts) => pts && [pts[0], pts[1], +(x / w).toFixed(4), +(y / h).toFixed(4)]);
+      return;
+    }
     const events = e.nativeEvent.getCoalescedEvents?.() ?? [e.nativeEvent];
     setDraft((pts) => {
       if (!pts) return pts;
@@ -135,6 +148,16 @@ export default function AnnotationLayer({ book, page, width: w, height: h, tool,
     setRightErase(false);
     if (active === "pen" && draft) {
       addAnnotation(book, page, { id: newId(), type: "ink", color, width: PEN_WIDTH, points: draft });
+    }
+    if (active === "marker" && draft) {
+      addAnnotation(book, page, {
+        id: newId(),
+        type: "ink",
+        color,
+        width: MARKER_WIDTH,
+        points: draft,
+        marker: true,
+      });
     }
     setDraft(null);
   };
@@ -161,9 +184,11 @@ export default function AnnotationLayer({ book, page, width: w, height: h, tool,
       className="absolute inset-0 z-10 select-none [filter:var(--page-filter)]"
     >
       <svg width={w} height={h} className="absolute inset-0 overflow-visible" aria-hidden>
+        {/* Fosforlu kalem izleri HighlightLayer'da, sayfayla karışarak çizilir */}
         {items.map(
           (a) =>
-            a.type === "ink" && (
+            a.type === "ink" &&
+            !a.marker && (
               <path
                 key={a.id}
                 d={strokePath(a.points, w, h)}
@@ -179,7 +204,8 @@ export default function AnnotationLayer({ book, page, width: w, height: h, tool,
           <path
             d={strokePath(draft, w, h)}
             stroke={color}
-            strokeWidth={Math.max(1, PEN_WIDTH * w)}
+            strokeOpacity={active === "marker" ? 0.35 : 1}
+            strokeWidth={Math.max(1, (active === "marker" ? MARKER_WIDTH : PEN_WIDTH) * w)}
             fill="none"
             strokeLinecap="round"
             strokeLinejoin="round"

@@ -5,6 +5,7 @@ import {
   HIGHLIGHT_COLORS,
   highlightHit,
   removeAnnotations,
+  strokePath,
   updateHighlight,
   usePageAnnotations,
   type Highlight,
@@ -28,6 +29,7 @@ type Props = {
 export default function HighlightLayer({ book, page, width: w, height: h, tool, onAsk }: Props) {
   const items = usePageAnnotations(book, page);
   const highlights = items.filter((a): a is Highlight => a.type === "highlight");
+  const markers = items.filter((a) => a.type === "ink" && a.marker);
   const ref = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
@@ -72,6 +74,25 @@ export default function HighlightLayer({ book, page, width: w, height: h, tool, 
   return (
     // z-index yok: kendi katman bağlamı oluşmasın, karışım (multiply) alttaki sayfayla yapılsın
     <div ref={ref} className="pointer-events-none absolute inset-0">
+      {markers.length > 0 && (
+        // Fosforlu kalem izleri: vurgular gibi yarı saydam ve sayfayla karışır
+        <svg width={w} height={h} className="highlight-rect absolute inset-0 overflow-visible" aria-hidden>
+          {markers.map(
+            (a) =>
+              a.type === "ink" && (
+                <path
+                  key={a.id}
+                  d={strokePath(a.points, w, h)}
+                  stroke={a.color}
+                  strokeWidth={a.width * w}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              ),
+          )}
+        </svg>
+      )}
       {highlights.map((hl) =>
         Array.from({ length: hl.rects.length / 4 }, (_, i) => {
           const [x, y, rw, rh] = hl.rects.slice(i * 4, i * 4 + 4);

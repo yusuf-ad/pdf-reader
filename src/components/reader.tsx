@@ -7,6 +7,7 @@ import {
   fileKey,
   addBook,
   getBook,
+  getSaveHandle,
   listBooks,
   loadFile,
   removeBook,
@@ -17,6 +18,7 @@ import {
 import {
   addAnnotation,
   deleteBookAnnotations,
+  getBookAnnotations,
   HIGHLIGHT_COLORS,
   INK_COLORS,
   newId,
@@ -24,13 +26,14 @@ import {
   type Tool,
 } from "@/lib/annotations";
 import type { Reference } from "@/lib/chat";
+import { deleteBookChatNotes } from "@/lib/chat-notes";
 import { deleteGeneratedToc } from "@/lib/generated-toc";
 import { deleteBookOcr, setOcrEnabled, useOcrEnabled } from "@/lib/ocr";
 import { getPageText, usePdfSearch } from "@/lib/pdf-search";
 import { loadProgress, saveProgress, toggleBookmark, useBookmarks } from "@/lib/reading-state";
 import { extractSelection, selectedPdfText, selectionHighlights } from "@/lib/selection";
 import { makeTextRenderer } from "@/lib/text-highlight";
-import type { Translation } from "@/lib/types";
+import type { SavedWord, Translation } from "@/lib/types";
 import { useSavedWords } from "@/lib/use-saved-words";
 import ChatModal from "./chat-modal";
 import LeftPanel, { type LeftTab } from "./left-panel";
@@ -81,6 +84,9 @@ export default function Reader() {
   const [inkColor, setInkColor] = useState<string>(INK_COLORS[1]);
   // Son kullanılan vurgu rengi (H kısayolu bununla vurgular)
   const [highlightColor, setHighlightColor] = useState<string>(HIGHLIGHT_COLORS[0].color);
+  const [saving, setSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+  const [savedToState, setSavedTo] = useState<{ book: string; name: string } | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -96,13 +102,18 @@ export default function Reader() {
   const savingBookRef = useRef<Promise<unknown>>(Promise.resolve());
   const loadedKeyRef = useRef<string | null>(null);
   // Son seçilen metin; Ctrl K ile sohbete referans olarak eklenir
-  const lastSelectionRef = useRef<Omit<Reference, "fileName" | "pageText"> | null>(null);
+  // fileName verilmezse açık dosya sayılır
+  const lastSelectionRef = useRef<
+    (Omit<Reference, "fileName" | "pageText"> & { fileName?: string | null }) | null
+  >(null);
 
   const { words, add, remove, clear } = useSavedWords();
   const key = file ? fileKey(file) : null;
   const bookmarks = useBookmarks(key);
   const ocrEnabled = useOcrEnabled(key);
   const numPages = pdf?.numPages ?? 0;
+  // Başka kitaptan kalan kayıt yeri gösterilmesin
+  const savedTo = savedToState?.book === key ? savedToState.name : null;
 
   const baseWidth = Math.min(rootWidth, MAX_PAGE_WIDTH);
   const pageWidth = Math.round(baseWidth * scale);
@@ -328,10 +339,26 @@ export default function Reader() {
       window.getSelection()?.removeAllRanges();
       const pageText =
         pdf && sel.page ? (await getPageText(pdf, sel.page, key)).slice(0, 6000) : undefined;
-      setChatReference({ ...sel, fileName: file?.name ?? null, pageText });
+      setChatReference({ ...sel, fileName: sel.fileName !== undefined ? sel.fileName : (file?.name ?? null), pageText });
     }
     setChatOpen(true);
   }, [pdf, file, key, closePopover]);
+
+  /** Kelime listesindeki kelimeyi, geçtiği cümleyle sohbete ekleyip sohbeti açar. */
+  const askWord = useCallback(
+    (w: SavedWord) => {
+      // Başka bir kitaptan kaydedildiyse o sayfanın metni bu kitaptan okunmasın
+      const here = w.fileName === file?.name;
+      lastSelectionRef.current = {
+        text: w.word,
+        sentence: w.sentence || undefined,
+        page: here ? w.page : null,
+        fileName: w.fileName,
+      };
+      openChat();
+    },
+    [file, openChat],
+  );
 
   /** Vurgulanan metni sohbete referans olarak ekleyip sohbeti açar. */
   const askAbout = useCallback(
@@ -362,6 +389,49 @@ export default function Reader() {
     },
     [key, closePopover],
   );
+
+  /**
+   * Kalem çizgilerini, yazıları ve vurguları PDF'e yazıp kaydeder. İlk kayıtta (ya da farklı
+   * kaydette) yer sorulur, sonra hep aynı dosyanın üzerine yazılır.
+   */
+  const savePdfWithNotes = useCallback(
+    async (saveAs = false) => {
+      if (!file || !key || saving) return;
+      // Düzenlenen yazı varsa önce kaydedilsin
+      (document.activeElement as HTMLElement | null)?.blur();
+      setSaving(true);
+      try {
+        const { chooseTarget, writeTarget } = await import("@/lib/save-target");
+        const target = await chooseTarget(key, file.name, saveAs);
+        if (!target) return;
+        const { exportAnnotatedPdf } = await import("@/lib/export-pdf");
+        await writeTarget(key, target, await exportAnnotatedPdf(file, getBookAnnotations(key)), file.name);
+        if (target !== "download") setSavedTo({ book: key, name: target.name });
+        setJustSaved(true);
+        setTimeout(() => setJustSaved(false), 2000);
+      } catch (err) {
+        if ((err as Error).name === "NotFoundError") {
+          setSavedTo(null);
+          alert("Son kaydedilen dosya bulunamadı (taşınmış ya da silinmiş olabilir). Tekrar kaydet; yer sorulacak.");
+        } else alert(`PDF kaydedilemedi: ${(err as Error).message}`);
+      } finally {
+        setSaving(false);
+      }
+    },
+    [file, key, saving],
+  );
+
+  // Bu kitabın en son nereye kaydedildiği (düğmenin ipucunda gösterilir)
+  useEffect(() => {
+    if (!key) return;
+    let active = true;
+    getSaveHandle(key)
+      .then((h) => active && setSavedTo(h ? { book: key, name: h.name } : null))
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [key]);
 
   const toggleFocusMode = useCallback(() => {
     if (document.fullscreenElement) document.exitFullscreen();
@@ -420,6 +490,11 @@ export default function Reader() {
         return;
       }
 
+      if (mod && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        savePdfWithNotes(e.shiftKey);
+        return;
+      }
       if (mod && e.key.toLowerCase() === "f" && file) {
         e.preventDefault();
         openSearch();
@@ -470,6 +545,7 @@ export default function Reader() {
         "[": () => setLeftOpen((o) => !o),
         "]": () => setRightOpen((o) => !o),
         d: () => setTool((t) => (t === "pen" ? null : "pen")),
+        m: () => setTool((t) => (t === "marker" ? null : "marker")),
         t: () => setTool((t) => (t === "text" ? null : "text")),
         e: () => setTool((t) => (t === "eraser" ? null : "eraser")),
         h: () => highlightSelection(highlightColor),
@@ -498,6 +574,7 @@ export default function Reader() {
     toggleFocusMode,
     highlightSelection,
     highlightColor,
+    savePdfWithNotes,
   ]);
 
   // --- Kelime seçimi ve çeviri -------------------------------------------
@@ -650,11 +727,16 @@ export default function Reader() {
               closePopover();
               setAskChip(null);
             }}
-            color={inkColor}
-            onColor={setInkColor}
+            // Fosforlu kalem vurgu renklerini kullanır (metin vurgusuyla aynı son renk)
+            color={tool === "marker" ? highlightColor : inkColor}
+            onColor={tool === "marker" ? setHighlightColor : setInkColor}
             onUndo={() => key && undo(key)}
             ocr={ocrEnabled}
             onToggleOcr={() => key && setOcrEnabled(key, !ocrEnabled)}
+            onSave={savePdfWithNotes}
+            saving={saving}
+            justSaved={justSaved}
+            savedTo={savedTo}
           />
         )}
 
@@ -675,7 +757,7 @@ export default function Reader() {
               onGoTo={goTo}
               bookKey={key!}
               tool={tool}
-              color={inkColor}
+              color={tool === "marker" ? highlightColor : inkColor}
               ocr={ocrEnabled}
               onAskHighlight={askAbout}
             />
@@ -700,9 +782,12 @@ export default function Reader() {
           <WordList
             words={words}
             onRemove={remove}
+            onAsk={askWord}
             onClear={clear}
             currentFileName={file?.name ?? null}
             onGoTo={goTo}
+            book={key}
+            currentPage={currentPage}
           />
         </ResizablePanel>
       )}
@@ -728,6 +813,7 @@ export default function Reader() {
               deleteBookAnnotations(k);
               deleteBookOcr(k);
               deleteGeneratedToc(k);
+              deleteBookChatNotes(k);
               if (k === key) {
                 setFile(null);
                 setPdf(null);

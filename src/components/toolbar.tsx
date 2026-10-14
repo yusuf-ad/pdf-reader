@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode, type RefObject } from "react";
-import { INK_COLORS, type Tool } from "@/lib/annotations";
+import { HIGHLIGHT_COLORS, INK_COLORS, type Tool } from "@/lib/annotations";
 import {
   BookmarkIcon,
   EraserIcon,
@@ -9,10 +9,12 @@ import {
   FitPageIcon,
   FitWidthIcon,
   KeyboardIcon,
+  MarkerIcon,
   OcrIcon,
   PanelLeftIcon,
   PanelRightIcon,
   PenIcon,
+  SaveIcon,
   SearchIcon,
   TextIcon,
   UndoIcon,
@@ -47,10 +49,17 @@ type Props = {
   onUndo: () => void;
   ocr: boolean;
   onToggleOcr: () => void;
+  onSave: (saveAs: boolean) => void;
+  saving: boolean;
+  /** Az önce kaydedildi (kısa bir onay gösterilir) */
+  justSaved: boolean;
+  /** Bu kitabın en son kaydedildiği dosyanın adı */
+  savedTo: string | null;
 };
 
 const TOOLS: [Tool, string, () => ReactNode][] = [
   ["pen", "Kalem  D", PenIcon],
+  ["marker", "Fosforlu kalem  M  (Shift: düz çizgi)", MarkerIcon],
   ["text", "Yazı ekle  T", TextIcon],
   ["eraser", "Silgi  E  (ya da sağ tık basılı)", EraserIcon],
 ];
@@ -110,9 +119,9 @@ export default function Toolbar(p: Props) {
           <ToolIcon />
         </IconButton>
       ))}
-      {(p.tool === "pen" || p.tool === "text") && (
+      {(p.tool === "pen" || p.tool === "marker" || p.tool === "text") && (
         <div className="flex shrink-0 items-center gap-1 px-1" role="radiogroup" aria-label="Renk">
-          {INK_COLORS.map((c) => (
+          {(p.tool === "marker" ? HIGHLIGHT_COLORS.map((h) => h.color) : INK_COLORS).map((c) => (
             <button
               key={c}
               role="radio"
@@ -138,6 +147,21 @@ export default function Toolbar(p: Props) {
       <IconButton label="Yer imi  B" active={p.bookmarked} onClick={p.onToggleBookmark}>
         <BookmarkIcon filled={p.bookmarked} />
       </IconButton>
+      <IconButton
+        label={
+          p.saving
+            ? "Kaydediliyor…"
+            : p.savedTo
+              ? `Notları PDF'e yazıp ${p.savedTo} dosyasına kaydet  Ctrl S
+Farklı kaydet: Ctrl Shift S ya da Shift tık`
+              : "Notları PDF'e yazıp kaydet  Ctrl S"
+        }
+        onClick={(e) => p.onSave(e.shiftKey)}
+        active={p.saving}
+      >
+        <SaveIcon />
+      </IconButton>
+      {p.justSaved && <span className="shrink-0 pr-1 text-xs text-muted">Kaydedildi</span>}
       <IconButton label="Belgede ara  Ctrl F" onClick={p.onSearch}>
         <SearchIcon />
       </IconButton>
@@ -197,7 +221,7 @@ function IconButton({
   active?: boolean;
   /** Etkinken arka planla belirginleştir (seçili araç) */
   highlight?: boolean;
-  onClick: () => void;
+  onClick: (e: React.MouseEvent) => void;
   children: ReactNode;
 }) {
   return (

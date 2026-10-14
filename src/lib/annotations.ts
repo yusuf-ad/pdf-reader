@@ -6,7 +6,7 @@ import { useSyncExternalStore } from "react";
 // Koordinatlar sayfa genişliği/yüksekliğine oranlanır (0–1); böylece her yakınlaştırmada
 // aynı yere düşer. Kalınlık ve yazı boyutu sayfa genişliğine oranlıdır.
 
-export type Tool = "pen" | "text" | "eraser";
+export type Tool = "pen" | "marker" | "text" | "eraser";
 
 export const INK_COLORS = ["#1f1d1a", "#c0392b", "#2e5fa8", "#2f7d4f"] as const;
 
@@ -17,6 +17,8 @@ export type Stroke = {
   width: number;
   /** x0, y0, x1, y1, … */
   points: number[];
+  /** Fosforlu kalem: geniş, yarı saydam, yazının altında kalır */
+  marker?: boolean;
 };
 
 export type Note = {
@@ -114,6 +116,9 @@ export function useBookAnnotations(book: string | null) {
     () => EMPTY_BOOK,
   );
 }
+
+/** Kitabın tüm notları (PDF'e yazarken). */
+export const getBookAnnotations = (book: string) => load(book);
 
 const current = (book: string, page: number) => load(book)[page] ?? EMPTY;
 

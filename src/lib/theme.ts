@@ -1,6 +1,7 @@
 export const THEMES = [
   { id: "light", label: "Açık" },
   { id: "sepia", label: "Sepya" },
+  { id: "baroque", label: "Barok" },
   { id: "dark", label: "Koyu" },
   { id: "monokai", label: "Monokai" },
   { id: "ristretto", label: "Ristretto" },

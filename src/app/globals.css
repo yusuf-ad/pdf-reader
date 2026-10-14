@@ -31,6 +31,23 @@
   --page-filter: sepia(0.4) brightness(0.93) contrast(0.95);
 }
 
+/*
+ * Fransız Barok (Versailles): gris Trianon (soluk mavi-gri) zemin, kraliyet mavisi yazı,
+ * yaldız altını çizgiler, kadife kırmızısı vurgu; sayfalar fildişi. Yazı/zemin kontrastı ~8:1.
+ */
+[data-theme="baroque"] {
+  --paper: #d9dde0;
+  --sheet: #e8eae7;
+  --ink: #1f3a78;
+  --muted: #4f5b72;
+  --rule: #bf9f55;
+  --accent: #8e2433;
+  --mark: rgba(201, 162, 64, 0.4);
+  --shadow: rgba(31, 58, 120, 0.16);
+  /* Sayfayı fildişine çeker */
+  --page-filter: sepia(0.38) brightness(0.97) contrast(0.95);
+}
+
 [data-theme="dark"] {
   --hl-blend: screen;
   --hl-opacity: 0.28;

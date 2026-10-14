@@ -1,6 +1,10 @@
 import { openai } from "@ai-sdk/openai";
 import { convertToModelMessages, generateText, streamText } from "ai";
-import { formatBookContext, PAGE_TEXT_CHARS, type BookContext } from "@/lib/book-context";
+import {
+  formatBookContext,
+  PAGE_TEXT_CHARS,
+  type BookContext,
+} from "@/lib/book-context";
 import {
   formatReference,
   splitSuggestions,
@@ -44,12 +48,16 @@ ${SUGGESTIONS_CLOSE}`;
 export async function POST(req: Request) {
   if (!process.env.OPENAI_API_KEY) {
     return Response.json(
-      { error: "OPENAI_API_KEY tanımlı değil (.env.local dosyasını kontrol et)." },
+      {
+        error:
+          "OPENAI_API_KEY tanımlı değil (.env.local dosyasını kontrol et).",
+      },
       { status: 500 },
     );
   }
 
-  const { messages, book }: { messages: ChatMessage[]; book?: BookContext } = await req.json();
+  const { messages, book }: { messages: ChatMessage[]; book?: BookContext } =
+    await req.json();
   const model = openai(process.env.OPENAI_MODEL || "gpt-6-luna");
   const last = messages.length - 1;
 
@@ -59,13 +67,17 @@ export async function POST(req: Request) {
       if (m.role === "assistant") {
         return {
           ...m,
-          parts: m.parts.map((p) => (p.type === "text" ? { ...p, text: splitSuggestions(p.text).body } : p)),
+          parts: m.parts.map((p) =>
+            p.type === "text"
+              ? { ...p, text: splitSuggestions(p.text).body }
+              : p,
+          ),
         };
       }
       if (m.role !== "user") return m;
       const skill = m.metadata?.skill;
       if (skill) {
-        // Belge metni yalnızca son istekte gönderilir; önceki özetler sohbette zaten var
+        // Belge metni yalnızca son istekte gönderilir; önceki özetler sohbette zaten varl
         const text =
           i === last
             ? await buildSkillPrompt(skill, model, req.signal)
@@ -76,7 +88,13 @@ export async function POST(req: Request) {
       if (m.metadata?.reference) {
         return {
           ...m,
-          parts: [{ type: "text" as const, text: formatReference(m.metadata.reference) }, ...m.parts],
+          parts: [
+            {
+              type: "text" as const,
+              text: formatReference(m.metadata.reference),
+            },
+            ...m.parts,
+          ],
         };
       }
       return m;
@@ -95,7 +113,8 @@ export async function POST(req: Request) {
 
 /** Seçili metin veya skill varsa sayfa metni zaten mesajda; açık sayfa yalnızca serbest sorularda eklenir. */
 function bookBlock(book: BookContext, lastMessage: ChatMessage | undefined) {
-  const clip = (v: unknown, n: number) => (typeof v === "string" ? v.slice(0, n) : null);
+  const clip = (v: unknown, n: number) =>
+    typeof v === "string" ? v.slice(0, n) : null;
   const safe: BookContext = {
     fileName: clip(book.fileName, 300),
     title: clip(book.title, 300),
@@ -106,7 +125,8 @@ function bookBlock(book: BookContext, lastMessage: ChatMessage | undefined) {
     chapter: clip(book.chapter, 500),
     pageText: clip(book.pageText, PAGE_TEXT_CHARS),
   };
-  const free = !lastMessage?.metadata?.reference && !lastMessage?.metadata?.skill;
+  const free =
+    !lastMessage?.metadata?.reference && !lastMessage?.metadata?.skill;
   return formatBookContext(safe, free);
 }
 
@@ -116,7 +136,8 @@ async function buildSkillPrompt(
   model: ReturnType<typeof openai>,
   signal: AbortSignal,
 ) {
-  if (!skill.pages.length) return skillPrompt(skill, "(Bu sayfalarda okunabilir metin yok.)", false);
+  if (!skill.pages.length)
+    return skillPrompt(skill, "(Bu sayfalarda okunabilir metin yok.)", false);
   const full = formatPages(skill.pages);
   if (full.length <= SINGLE_PASS_CHARS) return skillPrompt(skill, full, false);
 
@@ -138,6 +159,8 @@ async function buildSkillPrompt(
       summaries[i] = `## ${range}\n${text}`;
     }
   };
-  await Promise.all(Array.from({ length: Math.min(CHUNK_CONCURRENCY, chunks.length) }, worker));
+  await Promise.all(
+    Array.from({ length: Math.min(CHUNK_CONCURRENCY, chunks.length) }, worker),
+  );
   return skillPrompt(skill, summaries.join("\n\n"), true);
 }

@@ -13,6 +13,7 @@ import {
   profileHeadline,
   type BookContext,
 } from "@/lib/book-context";
+import { addChatNote, removeChatNote, useChatNotes } from "@/lib/chat-notes";
 import { splitSuggestions, type ChatMessage, type Reference } from "@/lib/chat";
 import { loadGeneratedToc } from "@/lib/generated-toc";
 import { getPageText } from "@/lib/pdf-search";
@@ -132,6 +133,34 @@ function ChatWindow({ open, onClose, reference, onClearReference, chatId, title,
   // Kitap bilgisi hazırlanırken (ilk soruda profil çıkarılıyor olabilir)
   const [preparing, setPreparing] = useState(false);
   const busy = status === "submitted" || status === "streaming" || reading !== null || preparing;
+  const chatNotes = useChatNotes(book);
+  // toggleNote her akış parçasında değişmesin (mesajlar memo'lu)
+  const latestRef = useRef({ messages, chatNotes, book, currentPage });
+  useEffect(() => {
+    latestRef.current = { messages, chatNotes, book, currentPage };
+  });
+
+  /** Cevabı, sorulan soruyla ve sayfasıyla birlikte notlara ekler ya da çıkarır. */
+  const toggleNote = useCallback(
+    (index: number) => {
+      const { messages, chatNotes, book, currentPage } = latestRef.current;
+      const answer = messages[index];
+      if (!book || !answer) return;
+      if (chatNotes.some((n) => n.messageId === answer.id)) return removeChatNote(book, answer.id);
+      const asked = messages[index - 1];
+      const meta = asked?.metadata;
+      const question = meta?.skill
+        ? skillLabel(meta.skill)
+        : [meta?.reference?.text, asked ? textOf(asked) : ""].filter(Boolean).join(" — ");
+      addChatNote(book, {
+        messageId: answer.id,
+        text: splitSuggestions(textOf(answer)).body,
+        question: question.slice(0, 300),
+        page: meta?.reference?.page ?? (meta?.skill ? null : currentPage),
+      });
+    },
+    [],
+  );
 
   /** Mesajı kitap bilgisiyle birlikte gönderir. */
   const send = async (message: Parameters<typeof sendMessage>[0]) => {
@@ -212,7 +241,8 @@ function ChatWindow({ open, onClose, reference, onClearReference, chatId, title,
   };
 
   const submit = () => {
-    const text = input.trim();
+    // Referans varken boş gönderilirse açıklama istenir (kelime listesinden hızlı sorma)
+    const text = input.trim() || (reference && !images.length ? explainPrompt(reference) : "");
     if ((!text && !images.length) || busy) return;
     setNotice(null);
     if (text === "/clear") {
@@ -322,6 +352,10 @@ function ChatWindow({ open, onClose, reference, onClearReference, chatId, title,
             <Message
               key={m.id}
               message={m}
+              index={i}
+              // Cevap bitmeden nota alınmasın
+              onToggleNote={book && !(busy && i === messages.length - 1) ? toggleNote : undefined}
+              saved={chatNotes.some((n) => n.messageId === m.id)}
               // Öneriler yalnızca son cevabın altında, cevap bitince
               onSuggest={i === messages.length - 1 && !busy ? ask : undefined}
             />
@@ -423,7 +457,7 @@ function ChatWindow({ open, onClose, reference, onClearReference, chatId, title,
               images.length
                 ? "Görsel hakkında sor (boş bırakırsan okuyup açıklar)…"
                 : reference
-                  ? "Seçili metin hakkında sor…"
+                  ? "Seçili metin hakkında sor (boş bırakıp Enter: açıkla)…"
                   : "Bir şey sor…"
             }
             className="flex-1 resize-none bg-transparent py-1 leading-relaxed outline-none placeholder:text-muted"
@@ -471,10 +505,16 @@ function ChatWindow({ open, onClose, reference, onClearReference, chatId, title,
 // (ve markdown'ları) baştan işlenmesin; yalnızca değişen mesaj yeniden çizilir
 const Message = memo(function Message({
   message: m,
+  index,
   onSuggest,
+  onToggleNote,
+  saved,
 }: {
   message: ChatMessage;
+  index: number;
   onSuggest?: (text: string) => void;
+  onToggleNote?: (index: number) => void;
+  saved: boolean;
 }) {
   const text = textOf(m);
   if (m.role !== "user") {
@@ -484,6 +524,15 @@ const Message = memo(function Message({
         <div className="chat-md font-serif text-[16px] leading-relaxed">
           <ReactMarkdown>{body}</ReactMarkdown>
         </div>
+        {onToggleNote && body && (
+          <button
+            onClick={() => onToggleNote(index)}
+            title={saved ? "Notlardan çıkar" : "Bu cevabı kelime panelindeki Notlar'a ekle"}
+            className={`mt-1 text-xs transition-colors ${saved ? "text-accent hover:text-ink" : "text-muted hover:text-ink"}`}
+          >
+            {saved ? "✓ Notlarda" : "+ Nota ekle"}
+          </button>
+        )}
         {onSuggest && suggestions.length > 0 && (
           <ul className="mt-3 space-y-1">
             {suggestions.map((q) => (
@@ -566,6 +615,12 @@ function Kbd({ children }: { children: React.ReactNode }) {
   return (
     <kbd className="border border-rule px-1 py-px font-mono text-[11px] text-muted">{children}</kbd>
   );
+}
+
+function explainPrompt(reference: Reference) {
+  return reference.text.trim().split(/\s+/).length <= 3
+    ? "Bunu geçtiği cümledeki anlamıyla açıkla; kullanımına birkaç kısa örnek ver."
+    : "Bu bölümü açıkla.";
 }
 
 const textOf = (m: ChatMessage) =>

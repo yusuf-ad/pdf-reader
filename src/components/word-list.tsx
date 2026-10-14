@@ -5,18 +5,38 @@ import type { SavedWord } from "@/lib/types";
 import { THEMES } from "@/lib/theme";
 import { useTheme } from "@/lib/use-theme";
 import Highlighted from "./highlighted";
+import NotesList, { useNotes } from "./notes-list";
 
 type Props = {
   words: SavedWord[];
   onRemove: (id: string) => void;
+  /** Kelimeyi geçtiği cümleyle sohbete sor */
+  onAsk: (word: SavedWord) => void;
   onClear: () => void;
   /** Açık dosyanın adı; aynı dosyadaki kelimelere tıklayınca o sayfaya gidilir */
   currentFileName: string | null;
   onGoTo: (page: number) => void;
+  /** Açık kitap; notlar sekmesi bu kitabın notlarını gösterir */
+  book: string | null;
+  currentPage: number;
 };
 
-export default function WordList({ words, onRemove, onClear, currentFileName, onGoTo }: Props) {
+type Tab = "words" | "notes";
+
+export default function WordList({
+  words,
+  onRemove,
+  onAsk,
+  onClear,
+  currentFileName,
+  onGoTo,
+  book,
+  currentPage,
+}: Props) {
+  const [tab, setTab] = useState<Tab>("words");
   const [query, setQuery] = useState("");
+  const notes = useNotes(book);
+  const noteCount = notes.length;
   const { theme, setTheme } = useTheme();
 
   const filtered = useMemo(() => {
@@ -55,15 +75,30 @@ export default function WordList({ words, onRemove, onClear, currentFileName, on
   return (
     <aside className="flex h-full min-h-0 flex-col border-l border-rule bg-sheet">
       <div className="px-6 pt-5 pb-3">
-        <div className="flex items-baseline justify-between">
-          <h2 className="font-serif text-lg">
-            Kelimeler
-            <span className="ml-2 font-sans text-xs tabular-nums text-muted">{words.length}</span>
-          </h2>
-          {words.length > 0 && (
+        <div className="flex items-baseline justify-between gap-4">
+          <div className="flex items-baseline gap-4" role="tablist">
+            {(
+              [
+                ["words", "Kelimeler", words.length],
+                ["notes", "Notlar", noteCount],
+              ] as const
+            ).map(([id, label, count]) => (
+              <button
+                key={id}
+                role="tab"
+                aria-selected={tab === id}
+                onClick={() => setTab(id)}
+                className={`font-serif text-lg transition-colors ${tab === id ? "text-ink" : "text-muted hover:text-ink"}`}
+              >
+                {label}
+                <span className="ml-1.5 font-sans text-xs tabular-nums text-muted">{count}</span>
+              </button>
+            ))}
+          </div>
+          {tab === "words" && words.length > 0 && (
             <div className="flex gap-4 text-xs text-muted">
               <button onClick={exportCsv} className="hover:text-ink">
-                CSV olarak indir
+                CSV
               </button>
               <button
                 onClick={() => confirm("Tüm kelimeler silinsin mi?") && onClear()}
@@ -74,64 +109,81 @@ export default function WordList({ words, onRemove, onClear, currentFileName, on
             </div>
           )}
         </div>
-        {words.length > 0 && (
+        {(tab === "words" ? words.length > 0 : noteCount > 0) && (
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Ara"
+            placeholder={tab === "words" ? "Ara" : "Notlarda ara"}
             className="mt-3 w-full border-b border-rule bg-transparent py-1.5 text-sm outline-none placeholder:text-muted focus:border-ink"
           />
         )}
       </div>
 
-      <ul className="flex-1 overflow-y-auto px-6">
-        {words.length === 0 && (
-          <li className="py-6 text-sm leading-relaxed text-muted">
-            Çevirdiğin kelimeler, geçtikleri cümleyle birlikte burada birikir.
-          </li>
-        )}
-        {words.length > 0 && filtered.length === 0 && (
-          <li className="py-6 text-sm text-muted">Eşleşen kelime yok.</li>
-        )}
-        {filtered.map((w) => (
-          <li key={w.id} className="group border-b border-rule py-4 last:border-0">
-            <div className="flex items-baseline gap-2">
-              <span className="font-serif text-[17px]">{w.word}</span>
-              <span className="text-xs text-muted">{w.partOfSpeech}</span>
-              <button
-                onClick={() => onRemove(w.id)}
-                className="ml-auto text-xs text-muted opacity-0 transition-opacity group-hover:opacity-100 hover:text-accent"
-              >
-                Sil
-              </button>
-            </div>
-            <p className="font-serif text-accent">{w.wordTranslation}</p>
-            {w.sentence && (
-              <div className="mt-2 space-y-1 font-serif text-[15px] leading-relaxed">
-                <p className="text-muted">
-                  <Highlighted text={w.sentence} word={w.word} />
-                </p>
-                <p>{w.sentenceTranslation}</p>
+      {tab === "notes" ? (
+        <NotesList
+          book={book}
+          items={notes}
+          currentPage={currentPage}
+          onGoTo={onGoTo}
+          query={query}
+        />
+      ) : (
+        <ul className="flex-1 overflow-y-auto px-6">
+          {words.length === 0 && (
+            <li className="py-6 text-sm leading-relaxed text-muted">
+              Çevirdiğin kelimeler, geçtikleri cümleyle birlikte burada birikir.
+            </li>
+          )}
+          {words.length > 0 && filtered.length === 0 && (
+            <li className="py-6 text-sm text-muted">Eşleşen kelime yok.</li>
+          )}
+          {filtered.map((w) => (
+            <li key={w.id} className="group border-b border-rule py-4 last:border-0">
+              <div className="flex items-baseline gap-2">
+                <span className="font-serif text-[17px]">{w.word}</span>
+                <span className="text-xs text-muted">{w.partOfSpeech}</span>
+                <button
+                  onClick={() => onAsk(w)}
+                  title="Bu kelimeyi geçtiği cümleyle sohbete sor"
+                  className="ml-auto text-xs text-muted hover:text-ink"
+                >
+                  AI&apos;a sor
+                </button>
+                <button
+                  onClick={() => onRemove(w.id)}
+                  className="text-xs text-muted opacity-0 transition-opacity group-hover:opacity-100 hover:text-accent"
+                >
+                  Sil
+                </button>
               </div>
-            )}
-            {w.page && w.fileName === currentFileName ? (
-              <button
-                onClick={() => onGoTo(w.page!)}
-                className="mt-2 text-xs text-muted underline decoration-rule underline-offset-2 hover:text-ink hover:decoration-ink"
-              >
-                Sayfaya git · s. {w.page}
-              </button>
-            ) : (
-              (w.fileName || w.page) && (
-                <p className="mt-2 truncate text-xs text-muted">
-                  {w.fileName}
-                  {w.page && `, s. ${w.page}`}
-                </p>
-              )
-            )}
-          </li>
-        ))}
-      </ul>
+              <p className="font-serif text-accent">{w.wordTranslation}</p>
+              {w.sentence && (
+                <div className="mt-2 space-y-1 font-serif text-[15px] leading-relaxed">
+                  <p className="text-muted">
+                    <Highlighted text={w.sentence} word={w.word} />
+                  </p>
+                  <p>{w.sentenceTranslation}</p>
+                </div>
+              )}
+              {w.page && w.fileName === currentFileName ? (
+                <button
+                  onClick={() => onGoTo(w.page!)}
+                  className="mt-2 text-xs text-muted underline decoration-rule underline-offset-2 hover:text-ink hover:decoration-ink"
+                >
+                  Sayfaya git · s. {w.page}
+                </button>
+              ) : (
+                (w.fileName || w.page) && (
+                  <p className="mt-2 truncate text-xs text-muted">
+                    {w.fileName}
+                    {w.page && `, s. ${w.page}`}
+                  </p>
+                )
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
 
       <div className="flex flex-wrap items-center gap-1 border-t border-rule px-6 py-3 text-xs">
         <span className="mr-2 text-muted">Tema</span>

@@ -18,7 +18,11 @@ export type Book = {
   cover?: string;
 };
 
-type StoredFile = Book & { data: Blob };
+type StoredFile = Book & {
+  data: Blob;
+  /** Notlu PDF'in en son kaydedildiği dosya (Ctrl S yeniden sormadan buraya yazar) */
+  saveHandle?: FileSystemFileHandle;
+};
 
 export function fileKey(file: File) {
   return `${file.name}:${file.size}:${file.lastModified}`;
@@ -55,8 +59,9 @@ export async function listBooks(): Promise<Book[]> {
   const recency = (b: Book) => b.openedAt ?? b.addedAt ?? 0;
   return all
     .map((stored) => {
-      const { data, ...book } = stored;
+      const { data, saveHandle, ...book } = stored;
       void data; // PDF'in kendisi listeye taşınmaz
+      void saveHandle;
       return book;
     })
     .sort((a, b) => recency(b) - recency(a));
@@ -76,6 +81,7 @@ export async function addBook(file: File, opened = false) {
     openedAt: opened ? now : existing?.openedAt,
     numPages: existing?.numPages,
     cover: existing?.cover,
+    saveHandle: existing?.saveHandle,
     data: existing?.data ?? file,
   });
   return { key, isNew: !existing, hasCover: !!existing?.cover };
@@ -84,8 +90,9 @@ export async function addBook(file: File, opened = false) {
 export async function getBook(key: string): Promise<Book | null> {
   const stored = await get(key);
   if (!stored) return null;
-  const { data, ...book } = stored;
+  const { data, saveHandle, ...book } = stored;
   void data;
+  void saveHandle;
   return book;
 }
 
@@ -101,6 +108,15 @@ export async function loadFile(key: string): Promise<File | null> {
     type: "application/pdf",
     lastModified: stored.lastModified,
   });
+}
+
+export async function getSaveHandle(key: string) {
+  return (await get(key))?.saveHandle ?? null;
+}
+
+export async function setSaveHandle(key: string, saveHandle: FileSystemFileHandle | null) {
+  const existing = await get(key);
+  if (existing) await put({ ...existing, saveHandle: saveHandle ?? undefined });
 }
 
 export async function removeBook(key: string) {
