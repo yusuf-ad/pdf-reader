@@ -21,6 +21,8 @@ export type Question = {
   /** Kitap adı (kitap silinse de listede gösterilsin) */
   bookName: string | null;
   page: number | null;
+  /** PDF'ten kırpıldıysa bölgenin kaynak sayfadaki genişliği (pt); birleşik PDF'te aynı boyutta basılır */
+  sourceWidth?: number;
   folderId: string | null;
   /** Eski sürümde klasör yerine konu yazılıyordu; ilk yüklemede klasöre çevrilir */
   topic?: string;
@@ -216,7 +218,7 @@ export async function cropPage(
   pdf: import("pdfjs-dist").PDFDocumentProxy,
   pageNumber: number,
   region: { x: number; y: number; w: number; h: number },
-): Promise<Blob> {
+): Promise<{ image: Blob; sourceWidth: number }> {
   const page = await pdf.getPage(pageNumber);
   const natural = page.getViewport({ scale: 1 });
   // Kırpılan parça en az ~1400px genişlikte olsun; çok büyük canvas'tan kaçın
@@ -237,7 +239,8 @@ export async function cropPage(
   out.getContext("2d")!.drawImage(full, sx, sy, sw, sh, 0, 0, sw, sh);
   full.width = full.height = 0; // belleği hemen bırak
 
-  return new Promise((resolve, reject) =>
+  const image = await new Promise<Blob>((resolve, reject) =>
     out.toBlob((b) => (b ? resolve(b) : reject(new Error("Görüntü oluşturulamadı."))), "image/png"),
   );
+  return { image, sourceWidth: +(region.w * natural.width).toFixed(1) };
 }

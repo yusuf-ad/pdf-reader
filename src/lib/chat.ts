@@ -1,4 +1,5 @@
-import type { UIMessage } from "ai";
+import type { UIDataTypes, UIMessage } from "ai";
+import type { QuizTools } from "./quiz";
 import type { SkillRequest } from "./skills";
 
 /** Sohbete eklenen PDF bölümü. */
@@ -12,7 +13,7 @@ export type Reference = {
   pageText?: string;
 };
 
-export type ChatMessage = UIMessage<{ reference?: Reference; skill?: SkillRequest }>;
+export type ChatMessage = UIMessage<{ reference?: Reference; skill?: SkillRequest }, UIDataTypes, QuizTools>;
 
 export function formatReference(ref: Reference) {
   const where = [ref.fileName, ref.page && `sayfa ${ref.page}`].filter(Boolean).join(", ");

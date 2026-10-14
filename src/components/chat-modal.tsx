@@ -17,7 +17,8 @@ import { addChatNote, removeChatNote, useChatNotes } from "@/lib/chat-notes";
 import { splitSuggestions, type ChatMessage, type Reference } from "@/lib/chat";
 import { loadGeneratedToc } from "@/lib/generated-toc";
 import { getPageText } from "@/lib/pdf-search";
-import { parseSkill, SKILLS, skillLabel, type SkillRequest } from "@/lib/skills";
+import { parseQuizRequest, parseSkill, SKILLS, skillLabel, type SkillRequest } from "@/lib/skills";
+import Quiz from "./quiz";
 
 const MAX_IMAGES = 4;
 // Büyük ekran görüntüleri bu boyuta küçültülür (istek küçük kalsın, yazı yine okunur)
@@ -58,7 +59,14 @@ type Props = {
   pdf: PDFDocumentProxy | null;
   book: string | null;
   currentPage: number;
+  /** Sohbete eklenecek görsel (kırpılan soru); eklenince onImageTaken çağrılır */
+  pendingImage?: File | null;
+  onImageTaken?: () => void;
+  /** Test açıklamasındaki sayfa bağlantısı */
+  onGoTo?: (page: number) => void;
 };
+
+const IMAGE_PROMPT = "Bu soruyu çöz ve adım adım açıkla.";
 
 // Az metinli sayfalar boş sayılır (taranmış, OCR yapılmamış)
 const MIN_PAGE_CHARS = 20;
@@ -75,7 +83,20 @@ export default function ChatModal(props: Props) {
   );
 }
 
-function ChatWindow({ open, onClose, reference, onClearReference, chatId, title, pdf, book, currentPage }: Props) {
+function ChatWindow({
+  open,
+  onClose,
+  reference,
+  onClearReference,
+  chatId,
+  title,
+  pdf,
+  book,
+  currentPage,
+  pendingImage,
+  onImageTaken,
+  onGoTo,
+}: Props) {
   const [profile, setProfile] = useState<string | null>(null);
 
   // Sohbet ilk açıldığında kitabı tanı (profil bir kez çıkarılıp saklanır)
@@ -209,8 +230,27 @@ function ChatWindow({ open, onClose, reference, onClearReference, chatId, title,
     inputRef.current?.focus();
   };
 
+  // Kırpılan soru: görsel eklenir, hazır soru seçili gelir (Enter: gönder, yazınca değişir)
+  useEffect(() => {
+    if (!pendingImage) return;
+    onImageTaken?.();
+    toImagePart(pendingImage)
+      .then((part) => {
+        setImages((prev) => [...prev, part].slice(-MAX_IMAGES));
+        setInput((prev) => prev || IMAGE_PROMPT);
+        requestAnimationFrame(() => inputRef.current?.select());
+      })
+      .catch(() => {});
+  }, [pendingImage, onImageTaken]);
+
   /** Skill'in istediği sayfaları okuyup belge metniyle birlikte gönderir. */
-  const runSkill = async (text: string, name: SkillRequest["name"], from: number, to: number) => {
+  const runSkill = async (
+    text: string,
+    name: SkillRequest["name"],
+    from: number,
+    to: number,
+    extra?: Pick<SkillRequest, "count" | "request">,
+  ) => {
     if (!pdf) return;
     cancelReadRef.current = false;
     const pages: SkillRequest["pages"] = [];
@@ -231,7 +271,7 @@ function ChatWindow({ open, onClose, reference, onClearReference, chatId, title,
     } finally {
       setReading(null);
     }
-    send({ text, metadata: { skill: { name, from, to, fileName: title, pages, emptyPages } } });
+    send({ text, metadata: { skill: { name, from, to, fileName: title, pages, emptyPages, ...extra } } });
   };
 
   const ask = (text: string) => {
@@ -257,6 +297,14 @@ function ChatWindow({ open, onClose, reference, onClearReference, chatId, title,
       if (!pdf) return setNotice("Önce bir PDF aç.");
       setInput("");
       runSkill(text, skill.name, skill.from, skill.to);
+      return;
+    }
+    // "15 soruluk test hazırla" gibi komutsuz test isteği: sayfa belirtilmediyse tüm PDF okunur.
+    // Seçili metin ya da görsel varsa test onlardan hazırlanır (normal soru gibi gider).
+    const quiz = !reference && !images.length && pdf ? parseQuizRequest(text, pdf.numPages, currentPage) : null;
+    if (quiz) {
+      setInput("");
+      runSkill(text, "test", quiz.from, quiz.to, { count: quiz.count, request: text });
       return;
     }
     setInput("");
@@ -338,7 +386,9 @@ function ChatWindow({ open, onClose, reference, onClearReference, chatId, title,
             </ul>
             <p className="mt-4">
               Hazır komutlar: <Kbd>/ozet</Kbd> tüm PDF&apos;i özetler (<Kbd>/ozet 10-25</Kbd> yalnızca
-              o sayfaları), <Kbd>/sayfa</Kbd> açık sayfayı özetler.
+              o sayfaları), <Kbd>/sayfa</Kbd> açık sayfayı özetler, <Kbd>/test</Kbd> tüm PDF&apos;ten
+              çoktan seçmeli test hazırlar (<Kbd>/test 10-25</Kbd> yalnızca o sayfalardan). “15 soruluk test
+              hazırla”, “bu sayfadan test yap” gibi yazarak da isteyebilirsin.
             </p>
             <p className="mt-4">
               Ekran görüntüsü de ekleyebilirsin: <Kbd>Ctrl V</Kbd> ile yapıştır ya da buraya sürükle.
@@ -358,6 +408,8 @@ function ChatWindow({ open, onClose, reference, onClearReference, chatId, title,
               saved={chatNotes.some((n) => n.messageId === m.id)}
               // Öneriler yalnızca son cevabın altında, cevap bitince
               onSuggest={i === messages.length - 1 && !busy ? ask : undefined}
+              streaming={busy && i === messages.length - 1}
+              onGoTo={onGoTo}
             />
           ))}
 
@@ -369,9 +421,11 @@ function ChatWindow({ open, onClose, reference, onClearReference, chatId, title,
           {preparing && !profile && <p className="animate-pulse font-mono text-xs text-muted">kitap tanınıyor…</p>}
           {status === "submitted" && (
             <p className="animate-pulse font-mono text-xs text-muted">
-              {(messages.at(-1)?.metadata?.skill?.pages.length ?? 0) > 1
-                ? "özetleniyor… (uzun belgelerde birkaç dakika sürebilir)"
-                : "düşünüyor…"}
+              {messages.at(-1)?.metadata?.skill?.name === "test"
+                ? "test hazırlanıyor…"
+                : (messages.at(-1)?.metadata?.skill?.pages.length ?? 0) > 1
+                  ? "özetleniyor… (uzun belgelerde birkaç dakika sürebilir)"
+                  : "düşünüyor…"}
             </p>
           )}
           {notice && <p className="text-sm text-accent">{notice}</p>}
@@ -488,7 +542,7 @@ function ChatWindow({ open, onClose, reference, onClearReference, chatId, title,
           )}
         </div>
         <p className="mt-1 font-mono text-[11px] text-muted">
-          enter gönder · shift+enter yeni satır · ctrl+v görsel yapıştır · /ozet · /sayfa · /clear sohbeti temizle · esc {busy ? "durdur" : "kapat"}
+          enter gönder · shift+enter yeni satır · ctrl+v görsel yapıştır · /ozet · /sayfa · /test · /clear sohbeti temizle · esc {busy ? "durdur" : "kapat"}
         </p>
       </div>
 
@@ -509,29 +563,56 @@ const Message = memo(function Message({
   onSuggest,
   onToggleNote,
   saved,
+  streaming,
+  onGoTo,
 }: {
   message: ChatMessage;
   index: number;
   onSuggest?: (text: string) => void;
   onToggleNote?: (index: number) => void;
   saved: boolean;
+  /** Cevap hâlâ yazılıyor */
+  streaming: boolean;
+  onGoTo?: (page: number) => void;
 }) {
   const text = textOf(m);
+  const bodyRef = useRef<HTMLDivElement>(null);
   if (m.role !== "user") {
     const { body, suggestions } = splitSuggestions(text);
     return (
       <div>
-        <div className="chat-md font-serif text-[16px] leading-relaxed">
-          <ReactMarkdown>{body}</ReactMarkdown>
-        </div>
-        {onToggleNote && body && (
-          <button
-            onClick={() => onToggleNote(index)}
-            title={saved ? "Notlardan çıkar" : "Bu cevabı kelime panelindeki Notlar'a ekle"}
-            className={`mt-1 text-xs transition-colors ${saved ? "text-accent hover:text-ink" : "text-muted hover:text-ink"}`}
-          >
-            {saved ? "✓ Notlarda" : "+ Nota ekle"}
-          </button>
+        {body && (
+          <div ref={bodyRef} className="chat-md font-serif text-[16px] leading-relaxed">
+            <ReactMarkdown>{body}</ReactMarkdown>
+          </div>
+        )}
+        {/* Generative UI: model createQuiz aracını çağırdıysa test kartı çizilir */}
+        {m.parts.map((p) =>
+          p.type === "tool-createQuiz" ? (
+            <div key={p.toolCallId} className={body ? "mt-3" : ""}>
+              <Quiz
+                id={p.toolCallId}
+                input={p.input}
+                ready={p.state === "input-available" || p.state === "output-available"}
+                error={p.state === "output-error" ? p.errorText : undefined}
+                onGoTo={onGoTo}
+              />
+            </div>
+          ) : null,
+        )}
+        {body && !streaming && (
+          <div className="mt-1 flex gap-4 text-xs">
+            <CopyButton markdown={body} htmlRef={bodyRef} />
+            {onToggleNote && (
+              <button
+                onClick={() => onToggleNote(index)}
+                title={saved ? "Notlardan çıkar" : "Bu cevabı kelime panelindeki Notlar'a ekle"}
+                className={`transition-colors ${saved ? "text-accent hover:text-ink" : "text-muted hover:text-ink"}`}
+              >
+                {saved ? "✓ Notlarda" : "+ Nota ekle"}
+              </button>
+            )}
+          </div>
         )}
         {onSuggest && suggestions.length > 0 && (
           <ul className="mt-3 space-y-1">
@@ -565,6 +646,57 @@ const Message = memo(function Message({
     </div>
   );
 });
+
+/** Markdown işaretlerini (##, **, `, [](), > …) temizleyip okunur düz metin yapar. */
+function plainText(markdown: string) {
+  return markdown
+    .replace(/^```[^\n]*\n?/gm, "") // kod bloğu çitleri
+    .replace(/^ {0,3}([-*_])( *\1){2,} *$/gm, "") // yatay çizgi (maddelerden önce)
+    .replace(/^#{1,6}\s+/gm, "") // başlıklar
+    .replace(/^\s*>\s?/gm, "") // alıntı
+    .replace(/^(\s*)[-*+]\s+/gm, "$1• ") // madde işaretleri
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1") // bağlantı / görsel: yalnızca metni
+    .replace(/(\*\*|__)(.+?)\1/g, "$2") // kalın
+    .replace(/(^|[^\w*])[*_]([^*_\n]+)[*_](?=[^\w*]|$)/gm, "$1$2") // italik
+    .replace(/~~(.+?)~~/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/**
+ * Cevabı panoya kopyalar: düz metin alanlarına işaretsiz metin, Word/Docs gibi editörlere
+ * biçimiyle (kalın, liste…) yapışır.
+ */
+function CopyButton({ markdown, htmlRef }: { markdown: string; htmlRef: React.RefObject<HTMLDivElement | null> }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    const html = htmlRef.current?.innerHTML;
+    const text = plainText(markdown);
+    try {
+      if (html && typeof ClipboardItem !== "undefined") {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/plain": new Blob([text], { type: "text/plain" }),
+            "text/html": new Blob([html], { type: "text/html" }),
+          }),
+        ]);
+      } else await navigator.clipboard.writeText(text);
+    } catch {
+      // Zengin kopyalama desteklenmiyorsa düz metin
+      await navigator.clipboard.writeText(text).catch(() => {});
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <button onClick={copy} title="Cevabı kopyala" className="text-muted transition-colors hover:text-ink">
+      {copied ? "✓ Kopyalandı" : "Kopyala"}
+    </button>
+  );
+}
 
 function MessageImages({ images }: { images: FileUIPart[] }) {
   // Tıklayınca büyür / küçülür

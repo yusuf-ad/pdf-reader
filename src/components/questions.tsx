@@ -38,7 +38,7 @@ function Modal({ label, onClose, children }: { label: string; onClose: () => voi
       <div
         role="dialog"
         aria-label={label}
-        className="flex max-h-full w-[640px] max-w-full flex-col border border-rule bg-sheet shadow-[0_8px_30px_var(--shadow)]"
+        className="flex max-h-full w-160 max-w-full flex-col border border-rule bg-sheet shadow-[0_8px_30px_var(--shadow)]"
       >
         {children}
       </div>
@@ -110,10 +110,13 @@ export function QuestionDialog({
   draft,
   onClose,
   onSaved,
+  onAsk,
 }: {
   draft: Omit<NewQuestion, "folderId" | "note">;
   onClose: () => void;
   onSaved: () => void;
+  /** Kaydetmeden sohbete sor */
+  onAsk: () => void;
 }) {
   const [folderId, setFolderId] = useState<string | null>(getLastFolder);
   const [note, setNote] = useState("");
@@ -125,6 +128,8 @@ export function QuestionDialog({
     try {
       await addQuestion({ ...draft, folderId, note: note.trim() });
       setLastFolder(folderId);
+      // Sorular sekmesi kaydedilen sorunun klasörüyle açılsın
+      rememberedView = folderId ? { kind: "folder", id: folderId } : { kind: "none" };
       onSaved();
     } catch (err) {
       setSaving(false);
@@ -176,9 +181,17 @@ export function QuestionDialog({
           </label>
         </div>
         <div className="flex items-center justify-end gap-3 border-t border-rule px-6 py-3 text-sm">
-          <span className="mr-auto text-xs text-muted">Enter: kaydet · Shift Enter: yeni satır · Esc: vazgeç</span>
+          <span className="mr-auto text-xs text-muted">Enter: kaydet · Esc: vazgeç</span>
           <button type="button" onClick={onClose} className="px-3 py-1.5 text-muted hover:text-ink">
             Vazgeç
+          </button>
+          <button
+            type="button"
+            onClick={onAsk}
+            title="Kaydetmeden sohbete gönder; görsel eklenir, istersen sorunu yazarsın"
+            className="flex items-center gap-1.5 border border-rule px-3 py-1.5 transition-colors hover:border-ink"
+          >
+            Sohbete sor <kbd className="font-mono text-[11px] text-muted">Ctrl K</kbd>
           </button>
           <button
             type="submit"
@@ -232,10 +245,15 @@ export function QuestionsTab({
   book,
   onGoTo,
   onStartCrop,
+  onOpenFile,
+  onAskImage,
 }: {
   book: string | null;
   onGoTo: (page: number) => void;
   onStartCrop: () => void;
+  /** Birleştirilen PDF okuyucuda açılır */
+  onOpenFile: (file: File) => void;
+  onAskImage: (image: Blob) => void;
 }) {
   const questions = useQuestions();
   const folders = useFolders();
@@ -270,7 +288,7 @@ export function QuestionsTab({
     return (
       <div className="text-sm">
         {header}
-        <FolderView view={current} book={book} onBack={() => setView(null)} onGoTo={onGoTo} />
+        <FolderView view={current} book={book} onBack={() => setView(null)} onGoTo={onGoTo} onOpenFile={onOpenFile} onAskImage={onAskImage} />
       </div>
     );
   }
@@ -368,17 +386,22 @@ function FolderView({
   book,
   onBack,
   onGoTo,
+  onOpenFile,
+  onAskImage,
 }: {
   view: View;
   book: string | null;
   onBack: () => void;
   onGoTo: (page: number) => void;
+  onOpenFile: (file: File) => void;
+  onAskImage: (image: Blob) => void;
 }) {
   const questions = useQuestions();
   const folders = useFolders();
   const [status, setStatus] = useState<Status>("open");
   const [renaming, setRenaming] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [making, setMaking] = useState(false);
 
   const folder = view.kind === "folder" ? folders.find((f) => f.id === view.id) : undefined;
   const title = folder?.name ?? { book: "Bu kitaptan", all: "Tüm sorular", none: "Klasörsüz", folder: "" }[view.kind];
@@ -394,6 +417,26 @@ function FolderView({
   const items = inView.filter((q) => status === "all" || q.status === status);
   const folderName = (id: string | null) => folders.find((f) => f.id === id)?.name;
   const opened = questions.find((q) => q.id === openId) ?? null;
+
+  /** Listedeki (filtrelenmiş) soruları kitap ve sayfa sırasıyla tek PDF yapıp açar. */
+  const makePdf = async () => {
+    if (!items.length || making) return;
+    setMaking(true);
+    try {
+      const ordered = [...items].sort(
+        (a, b) =>
+          (a.bookName ?? "").localeCompare(b.bookName ?? "", "tr") ||
+          (a.page ?? 0) - (b.page ?? 0) ||
+          a.createdAt - b.createdAt,
+      );
+      const { questionsToPdf } = await import("@/lib/questions-pdf");
+      onOpenFile(await questionsToPdf(title, ordered));
+    } catch (err) {
+      alert(`PDF oluşturulamadı: ${(err as Error).message}`);
+    } finally {
+      setMaking(false);
+    }
+  };
 
   return (
     <>
@@ -444,6 +487,16 @@ function FolderView({
           ))}
           <span className="ml-auto tabular-nums text-muted">{countLabel(inView)}</span>
         </div>
+        {items.length > 0 && (
+          <button
+            onClick={makePdf}
+            disabled={making}
+            title="Listedeki soruları alt alta dizip tek bir PDF yapar ve okuyucuda açar (kitaplığa eklenir)"
+            className="w-full border border-rule px-3 py-1.5 text-left text-xs transition-colors hover:border-ink disabled:animate-pulse"
+          >
+            {making ? "PDF hazırlanıyor…" : `Bu ${items.length} soruyu PDF olarak aç`}
+          </button>
+        )}
       </div>
 
       {items.length === 0 ? (
@@ -474,7 +527,7 @@ function FolderView({
                 <img
                   src={imageUrl(q.image)}
                   alt="Soru"
-                  className={`mt-1 max-h-40 w-full border border-rule object-contain object-left-top ${imageFilter(q.page)} ${
+                  className={`mt-1 max-h-40 w-full border border-rule object-contain object-top-left ${imageFilter(q.page)} ${
                     q.status === "solved" ? "opacity-50" : ""
                   }`}
                 />
@@ -493,6 +546,10 @@ function FolderView({
             onGoTo(opened.page!);
             setOpenId(null);
           }}
+          onAsk={() => {
+            setOpenId(null);
+            onAskImage(opened.image);
+          }}
           onClose={() => setOpenId(null)}
         />
       )}
@@ -505,11 +562,13 @@ function QuestionViewer({
   question: q,
   canGoTo,
   onGoTo,
+  onAsk,
   onClose,
 }: {
   question: Question;
   canGoTo: boolean;
   onGoTo: () => void;
+  onAsk: () => void;
   onClose: () => void;
 }) {
   const [note, setNote] = useState(q.note);
@@ -567,6 +626,15 @@ function QuestionViewer({
             Sayfaya git
           </button>
         )}
+        <button
+          onClick={() => {
+            if (note.trim() !== q.note) updateQuestion(q.id, { note: note.trim() });
+            onAsk();
+          }}
+          className="text-muted hover:text-ink"
+        >
+          Sohbete sor
+        </button>
         <button
           onClick={() => updateQuestion(q.id, { status: q.status === "solved" ? "open" : "solved" })}
           className={`ml-auto border px-4 py-1.5 transition-colors ${

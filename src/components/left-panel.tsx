@@ -35,6 +35,10 @@ type Props = {
   onAsk: (text: string, page: number) => void;
   /** Sayfadan soru kırpmayı başlat */
   onStartCrop: () => void;
+  /** Soru klasöründen oluşturulan PDF'i aç */
+  onOpenFile: (file: File) => void;
+  /** Soru görselini sohbete sor */
+  onAskImage: (image: Blob) => void;
 };
 
 const TABS: [LeftTab, string][] = [
@@ -50,7 +54,7 @@ export default function LeftPanel(props: Props) {
   return (
     <aside className="flex h-full min-h-0 flex-col border-r border-rule bg-sheet">
       {/* Dar panelde sekmeler kaydırma çubuğu yerine alt satıra geçer */}
-      <nav className="flex flex-wrap gap-x-3 border-b border-rule px-4 text-[13px] whitespace-nowrap">
+      <nav className="flex flex-wrap gap-x-2.5 border-b border-rule px-3 text-[13px] whitespace-nowrap">
         {TABS.map(([id, label]) => (
           <button
             key={id}
@@ -68,7 +72,13 @@ export default function LeftPanel(props: Props) {
         {tab === "bookmarks" && <Bookmarks {...props} />}
         {tab === "highlights" && <Highlights {...props} />}
         {tab === "questions" && (
-          <QuestionsTab book={props.book} onGoTo={props.onGoTo} onStartCrop={props.onStartCrop} />
+          <QuestionsTab
+            book={props.book}
+            onGoTo={props.onGoTo}
+            onStartCrop={props.onStartCrop}
+            onOpenFile={props.onOpenFile}
+            onAskImage={props.onAskImage}
+          />
         )}
         {tab === "search" && <SearchTab {...props} />}
       </div>

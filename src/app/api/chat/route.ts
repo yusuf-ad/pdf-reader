@@ -5,6 +5,7 @@ import {
   PAGE_TEXT_CHARS,
   type BookContext,
 } from "@/lib/book-context";
+import { quizTools } from "@/lib/quiz";
 import {
   formatReference,
   splitSuggestions,
@@ -38,6 +39,7 @@ const SYSTEM = `Sen bir okuma asistanısın. Kullanıcı bir kitap/PDF okuyor ve
 - Varsayılan olarak Türkçe cevap ver; kullanıcı başka dil isterse ona uy. Kısa ve net ol.
 - Metinde olmayan bir şeyi metindeymiş gibi söyleme; genel bilgini kullandığında bunu belli et.
 - Kullanıcı görsel (genelde ekran görüntüsü) ekleyebilir. Görseldeki yazıyı dikkatle oku. Soru yoksa: yazıyı aynen aktar, Türkçe çevirisini ver ve kısaca açıkla. Okuyamadığın kısımları uydurma, okunamadığını söyle.
+- Kullanıcı test, quiz ya da soru çözmek isterse createQuiz aracını çağır; soruları okuduğu kitabın verilen metnine (<belge>, <sayfa_metni>, <acik_sayfa>, <secili_metin>) dayandır, soruları ayrıca metin olarak yazma. Kaç soru istediğini söylemediyse 5 soru hazırla. Metin yoksa ya da yetersizse test uydurma, bunu söyle.
 - Her cevabın en sonuna, kullanıcının bir sonraki adımda sorabileceği 3 kısa takip sorusu ekle. Sorular bu cevaba ve kitaba özgü olsun, kullanıcının ağzından yazılsın, her biri en fazla 12 kelime. Tam olarak şu biçimde ve cevabın en sonunda:
 ${SUGGESTIONS_OPEN}
 - soru
@@ -101,10 +103,14 @@ export async function POST(req: Request) {
     }),
   );
 
+  // /test komutunda model mutlaka test aracını çağırır
+  const quiz = messages[last]?.metadata?.skill?.name === "test";
   const result = streamText({
     model,
     system: book ? `${SYSTEM}\n\n${bookBlock(book, messages[last])}` : SYSTEM,
     messages: await convertToModelMessages(withReferences),
+    tools: quizTools,
+    toolChoice: quiz ? { type: "tool", toolName: "createQuiz" } : "auto",
     abortSignal: req.signal,
   });
 

@@ -88,6 +88,8 @@ export default function Reader() {
   // Soru kırpma modu ve kaydedilmeyi bekleyen soru görüntüsü
   const [cropping, setCropping] = useState(false);
   const [questionDraft, setQuestionDraft] = useState<Omit<NewQuestion, "folderId" | "note"> | null>(null);
+  // Sohbete gönderilecek soru görseli
+  const [chatImage, setChatImage] = useState<File | null>(null);
   // Son kullanılan vurgu rengi (H kısayolu bununla vurgular)
   const [highlightColor, setHighlightColor] = useState<string>(HIGHLIGHT_COLORS[0].color);
   const [saving, setSaving] = useState(false);
@@ -350,6 +352,28 @@ export default function Reader() {
     setChatOpen(true);
   }, [pdf, file, key, closePopover]);
 
+  /** Soru görselini sohbete ekleyip sohbeti açar. */
+  const askImage = useCallback(
+    (image: Blob) => {
+      closePopover();
+      setAskChip(null);
+      setQuestionDraft(null);
+      setChatImage(new File([image], "soru.png", { type: image.type || "image/png" }));
+      setChatOpen(true);
+    },
+    [closePopover],
+  );
+  const takeChatImage = useCallback(() => setChatImage(null), []);
+
+  /** Sohbetteki bağlantıdan sayfaya git (sohbet kapanır). */
+  const goToFromChat = useCallback(
+    (page: number) => {
+      setChatOpen(false);
+      goTo(page);
+    },
+    [goTo],
+  );
+
   /** Kelime listesindeki kelimeyi, geçtiği cümleyle sohbete ekleyip sohbeti açar. */
   const askWord = useCallback(
     (w: SavedWord) => {
@@ -454,8 +478,8 @@ export default function Reader() {
       setCropping(false);
       if (!pdf || !file) return;
       try {
-        const image = await cropPage(pdf, page, region);
-        setQuestionDraft({ image, book: key, bookName: file.name, page });
+        const { image, sourceWidth } = await cropPage(pdf, page, region);
+        setQuestionDraft({ image, sourceWidth, book: key, bookName: file.name, page });
       } catch (err) {
         alert(`Soru kırpılamadı: ${(err as Error).message}`);
       }
@@ -523,7 +547,9 @@ export default function Reader() {
 
       if (mod && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        if (chatOpen) setChatOpen(false);
+        // Kırpılan soru penceresi açıkken: soruyu sohbete sor
+        if (questionDraft) askImage(questionDraft.image);
+        else if (chatOpen) setChatOpen(false);
         else openChat();
         return;
       }
@@ -630,6 +656,7 @@ export default function Reader() {
     highlightColor,
     savePdfWithNotes,
     startCrop,
+    askImage,
   ]);
 
   // --- Kelime seçimi ve çeviri -------------------------------------------
@@ -698,7 +725,7 @@ export default function Reader() {
   return (
     <div className="flex h-screen">
       {file && leftOpen && showPanels && (
-        <ResizablePanel id="left" edge="right" defaultWidth={300} minWidth={240}>
+        <ResizablePanel id="left" edge="right" defaultWidth={320} minWidth={240}>
           <LeftPanel
             tab={leftTab}
             onTabChange={(tab) => {
@@ -717,6 +744,8 @@ export default function Reader() {
             book={key}
             onAsk={askAbout}
             onStartCrop={startCrop}
+            onOpenFile={openFile}
+            onAskImage={askImage}
           />
         </ResizablePanel>
       )}
@@ -928,10 +957,14 @@ export default function Reader() {
         pdf={pdf}
         book={key}
         currentPage={currentPage}
+        pendingImage={chatImage}
+        onImageTaken={takeChatImage}
+        onGoTo={goToFromChat}
       />
       {questionDraft && (
         <QuestionDialog
           draft={questionDraft}
+          onAsk={() => askImage(questionDraft.image)}
           onClose={() => setQuestionDraft(null)}
           onSaved={() => {
             setQuestionDraft(null);
