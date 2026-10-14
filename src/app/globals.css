@@ -16,6 +16,9 @@
   --accent: #8a3d24;
   --mark: rgba(226, 190, 80, 0.4);
   --shadow: rgba(46, 43, 39, 0.1);
+  --good: #2f7d4f;
+  /* Pencere açıkken arkadaki karartma; koyu temalarda yazı rengiyle değil siyahla */
+  --scrim: color-mix(in srgb, var(--ink) 22%, transparent);
   --page-filter: sepia(0.08) brightness(0.96);
 }
 
@@ -48,10 +51,33 @@
   --page-filter: sepia(0.38) brightness(0.97) contrast(0.95);
 }
 
+/*
+ * Gece: mürekkep mavisi zemin, sıcak kırık beyaz yazı, kehribar vurgu. Sayfalar SVG filtresiyle
+ * (layout.tsx'teki #night-page) birebir zemin tonuna çekilir; gri/çamurlu görünmez, renkli
+ * şekiller ve vurgular tonunu korur. Yazı/zemin kontrastı ~11:1, saf beyaz yok.
+ */
+[data-theme="night"] {
+  --hl-blend: screen;
+  --hl-opacity: 0.3;
+  color-scheme: dark;
+  --scrim: rgba(0, 0, 0, 0.55);
+  --paper: #14171d;
+  --sheet: #1d2129;
+  --ink: #e2dfd8;
+  --muted: #8a919d;
+  --rule: #2d333d;
+  --accent: #e3a96f;
+  --mark: rgba(120, 155, 225, 0.35);
+  --shadow: rgba(0, 0, 0, 0.55);
+  --good: #7cc597;
+  --page-filter: url(#night-page);
+}
+
 [data-theme="dark"] {
   --hl-blend: screen;
   --hl-opacity: 0.28;
   color-scheme: dark;
+  --scrim: rgba(0, 0, 0, 0.55);
   --paper: #1c1b19;
   --sheet: #232220;
   --ink: #d6d1c7;
@@ -60,6 +86,7 @@
   --accent: #d39a7c;
   --mark: rgba(200, 160, 70, 0.3);
   --shadow: rgba(0, 0, 0, 0.4);
+  --good: #7cc597;
   /* Beyaz sayfayı koyu zemine çevirir; hue-rotate renkleri yaklaşık korur */
   --page-filter: invert(0.87) hue-rotate(180deg) sepia(0.15);
 }
@@ -69,6 +96,7 @@
   --hl-blend: screen;
   --hl-opacity: 0.28;
   color-scheme: dark;
+  --scrim: rgba(0, 0, 0, 0.55);
   --paper: #221f22;
   --sheet: #2d2a2e;
   --ink: #fcfcfa;
@@ -77,6 +105,7 @@
   --accent: #ffd866;
   --mark: rgba(255, 216, 102, 0.28);
   --shadow: rgba(0, 0, 0, 0.45);
+  --good: #a9dc76;
   /* Sayfayı Monokai'nin mor-gri zeminine yaklaştırır */
   --page-filter: invert(0.83) hue-rotate(180deg) sepia(0.12) hue-rotate(250deg) saturate(1.1);
 }
@@ -86,6 +115,7 @@
   --hl-blend: screen;
   --hl-opacity: 0.28;
   color-scheme: dark;
+  --scrim: rgba(0, 0, 0, 0.55);
   --paper: #211c1c;
   --sheet: #2c2525;
   --ink: #fff1f3;
@@ -94,6 +124,7 @@
   --accent: #f9cc6c;
   --mark: rgba(249, 204, 108, 0.28);
   --shadow: rgba(0, 0, 0, 0.45);
+  --good: #adda78;
   --page-filter: invert(0.83) hue-rotate(180deg) sepia(0.3) hue-rotate(-15deg);
 }
 
@@ -105,6 +136,8 @@
   --color-rule: var(--rule);
   --color-accent: var(--accent);
   --color-mark: var(--mark);
+  --color-good: var(--good);
+  --color-scrim: var(--scrim);
   --font-serif: var(--font-newsreader), Georgia, serif;
   --font-sans: var(--font-plex), system-ui, sans-serif;
 }

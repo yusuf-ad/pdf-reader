@@ -40,7 +40,7 @@ export default function ShortcutsDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/20"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-scrim"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div role="dialog" aria-label="Kısayollar" className="w-[440px] border border-rule bg-sheet p-6 shadow-[0_8px_30px_var(--shadow)]">

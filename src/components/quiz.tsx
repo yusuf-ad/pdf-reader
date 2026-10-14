@@ -23,7 +23,7 @@ type Question = { question: string; options: string[]; answer: number; explanati
 
 const LETTERS = "ABCDEF";
 // Doğru cevap rengi (annotations'daki yeşil mürekkep); yanlış için temanın vurgu rengi
-const GREEN = "#2f7d4f";
+const GREEN = "var(--good)";
 
 /**
  * Sohbette çizilen test kartı (generative UI). Sorular tek tek, ilerlemeli gelir; cevaplayınca
@@ -228,14 +228,14 @@ function Runner({
                   <button
                     onClick={() => choose(original)}
                     disabled={isAnswered}
-                    style={isAnswered && isRight ? { borderColor: GREEN, background: `${GREEN}1a` } : undefined}
+                    style={isAnswered && isRight ? { borderColor: GREEN, background: `color-mix(in srgb, ${GREEN} 10%, transparent)` } : undefined}
                     className={`group flex w-full items-start gap-3 border px-3 py-2.5 text-left transition-colors disabled:cursor-default ${look}`}
                   >
                     <span
                       style={isAnswered && isRight ? { background: GREEN, borderColor: GREEN } : undefined}
                       className={`flex h-6 w-6 shrink-0 items-center justify-center border font-mono text-xs ${
                         isAnswered && isRight
-                          ? "text-white"
+                          ? "text-sheet"
                           : isAnswered && isChosen
                             ? "border-accent bg-accent text-sheet"
                             : "border-rule text-muted group-hover:border-ink group-hover:text-ink"

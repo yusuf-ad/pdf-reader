@@ -32,7 +32,7 @@ function Modal({ label, onClose, children }: { label: string; onClose: () => voi
   useEscape(onClose);
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/20 p-6"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-6"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div

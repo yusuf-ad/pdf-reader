@@ -75,7 +75,7 @@ export default function ChatModal(props: Props) {
   // Sohbet kapatılınca kaybolmasın diye bileşen hep bağlı kalır, yalnızca gizlenir
   return (
     <div
-      className={`fixed inset-0 z-40 items-center justify-center bg-ink/25 ${props.open ? "flex" : "hidden"}`}
+      className={`fixed inset-0 z-40 items-center justify-center bg-scrim ${props.open ? "flex" : "hidden"}`}
       onMouseDown={(e) => e.target === e.currentTarget && props.onClose()}
     >
       <ChatWindow key={props.chatId} {...props} />
