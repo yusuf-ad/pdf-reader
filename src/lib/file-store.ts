@@ -1,6 +1,10 @@
 // Kitaplık: açılan/eklenen PDF'ler IndexedDB'de tutulur. Sayfa yenilense de kaybolmaz,
 // kitaplıktan tek tıkla açılır. Kapak ve sayfa sayısı ilk açılışta hesaplanıp saklanır.
 
+import { renameBookOcr } from "./ocr";
+import { renameBookQuestions } from "./questions";
+import { renameBook, storedBooks } from "./storage";
+
 const DB_NAME = "pdf-reader";
 const STORE = "files";
 
@@ -24,8 +28,72 @@ type StoredFile = Book & {
   saveHandle?: FileSystemFileHandle;
 };
 
-export function fileKey(file: File) {
-  return `${file.name}:${file.size}:${file.lastModified}`;
+/**
+ * Kitabın anahtarı PDF'in içeriğinden üretilir: dosya kopyalansa, yeniden indirilse ya da
+ * OneDrive eşitlerken tarihini değiştirse de aynı kalır. Notlar kitaba bu anahtarla bağlıdır.
+ */
+export async function contentKey(file: Blob) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (crypto.subtle) {
+    const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+    return "pdf:" + [...hash.slice(0, 16)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  // Güvenli olmayan bağlantıda (http://192.168…) crypto.subtle yok: FNV-1a, iki tohumla
+  let a = 0x811c9dc5;
+  let b = 0x01000193 ^ bytes.length;
+  for (let i = 0; i < bytes.length; i++) {
+    a = Math.imul(a ^ bytes[i], 0x01000193);
+    b = Math.imul(b ^ bytes[i], 0x5bd1e995);
+  }
+  return `pdfx:${(a >>> 0).toString(16)}${(b >>> 0).toString(16)}:${bytes.length}`;
+}
+
+const isContentKey = (key: string) => /^pdfx?:/.test(key);
+
+/** Eski sürümün anahtarı (ad:boyut:değiştirilme tarihi) bu dosyaya mı ait? */
+function isLegacyKeyOf(key: string, name: string, size: number) {
+  const m = !isContentKey(key) && key.match(/^(.*):(\d+):(\d+)$/);
+  return !!m && m[1] === name && +m[2] === size;
+}
+
+/**
+ * Eski sürümde dosyanın tarihi değişince (yeniden indirme, OneDrive eşitlemesi) aynı kitap
+ * yeni bir anahtar alıyor, notları eski anahtarda "kayboluyordu". Aynı ad ve boyuttaki
+ * eski anahtarlarda kalan her şey bu kitaba taşınır.
+ */
+export async function adoptLegacyData(name: string, size: number, key: string, extra: string[] = []) {
+  const olds = new Set([...extra, ...storedBooks().filter((b) => isLegacyKeyOf(b, name, size))]);
+  for (const old of olds) {
+    renameBook(old, key);
+    await renameBookOcr(old, key).catch(() => {});
+    await renameBookQuestions(old, key).catch(() => {});
+  }
+}
+
+/** Kitaplıktaki eski anahtarlı kayıtları içerik anahtarına çevirir (bir kez, açılışta). */
+export async function migrateLibrary(onStart?: () => void) {
+  const all = await run<StoredFile[]>("readonly", (s) => s.getAll());
+  const legacy = all.filter((b) => !isContentKey(b.key));
+  if (legacy.length) onStart?.();
+  for (const old of legacy) {
+    const key = await contentKey(old.data);
+    // Aynı PDF kitaplıkta iki kez olabilir (tarihi farklı kopyalar): tek kayıtta birleşir
+    const existing = await get(key);
+    const opened = [existing?.openedAt, old.openedAt].filter((t): t is number => !!t);
+    await put({
+      ...old,
+      ...existing,
+      key,
+      addedAt: Math.min(old.addedAt, existing?.addedAt ?? Infinity),
+      openedAt: opened.length ? Math.max(...opened) : undefined,
+      numPages: existing?.numPages ?? old.numPages,
+      cover: existing?.cover ?? old.cover,
+      saveHandle: existing?.saveHandle ?? old.saveHandle,
+      data: existing?.data ?? old.data,
+    });
+    await run("readwrite", (s) => s.delete(old.key));
+    await adoptLegacyData(old.name, old.size, key, [old.key]);
+  }
 }
 
 function openDb(): Promise<IDBDatabase> {
@@ -49,11 +117,6 @@ async function run<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore) => I
 const get = (key: string) => run<StoredFile | undefined>("readonly", (s) => s.get(key));
 const put = (file: StoredFile) => run("readwrite", (s) => s.put(file));
 
-/** Tarayıcıdan, yer daralınca kitaplığı silmemesini iste. */
-export function requestPersistence() {
-  navigator.storage?.persist?.().catch(() => {});
-}
-
 export async function listBooks(): Promise<Book[]> {
   const all = await run<StoredFile[]>("readonly", (s) => s.getAll());
   const recency = (b: Book) => b.openedAt ?? b.addedAt ?? 0;
@@ -68,8 +131,9 @@ export async function listBooks(): Promise<Book[]> {
 }
 
 /** Kitaplığa ekler (varsa dokunmaz). */
-export async function addBook(file: File, opened = false) {
-  const key = fileKey(file);
+export async function addBook(file: File, opened = false, knownKey?: string) {
+  const key = knownKey ?? (await contentKey(file));
+  if (!knownKey) await adoptLegacyData(file.name, file.size, key);
   const existing = await get(key);
   const now = Date.now();
   await put({

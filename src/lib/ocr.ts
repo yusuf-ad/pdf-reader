@@ -1,8 +1,9 @@
 "use client";
 
 import type { PDFPageProxy } from "pdfjs-dist";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import type { Worker } from "tesseract.js";
+import { bookKey, set, useStored } from "./storage";
 
 // Taranmış (yalnızca resimden oluşan) sayfalar için metin tanıma.
 // Sayfa ekrana gelince arka planda tesseract.js ile okunur; kelimeler sayfadaki
@@ -66,9 +67,30 @@ export async function loadOcrText(book: string, page: number) {
   return data?.lines.map((line) => line.map((w) => w.t).join(" ")).join(" ");
 }
 
+const bookRange = (book: string) => IDBKeyRange.bound(`${book}#`, `${book}#￿`);
+
 export async function deleteBookOcr(book: string) {
-  const range = IDBKeyRange.bound(`${book}#`, `${book}#￿`);
-  await idb("readwrite", (s) => s.delete(range)).catch(() => {});
+  await idb("readwrite", (s) => s.delete(bookRange(book))).catch(() => {});
+}
+
+/** Kitabın anahtarı değişince tanınmış sayfaları yeni anahtara taşır. */
+export async function renameBookOcr(from: string, to: string) {
+  const d = await db();
+  const tx = d.transaction(STORE, "readwrite");
+  const store = tx.objectStore(STORE);
+  const req = store.openCursor(bookRange(from));
+  req.onsuccess = () => {
+    const cursor = req.result;
+    if (!cursor) return;
+    const page = String(cursor.key).slice(from.length + 1);
+    store.put(cursor.value, `${to}#${page}`);
+    cursor.delete();
+    cursor.continue();
+  };
+  await new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = tx.onabort = () => reject(tx.error);
+  });
 }
 
 // --- Tanıma kuyruğu -----------------------------------------------------------
@@ -189,37 +211,13 @@ export function useOcr(book: string, page: PDFPageProxy | null, enabled: boolean
   return state.key === key ? state.value : { status: "idle" as const };
 }
 
-// --- Kitap başına açma/kapama (localStorage) ---------------------------------
-
-const DISABLED_KEY = "pdf-reader:ocr-disabled";
-const listeners = new Set<() => void>();
-let disabledCache: string[] | null = null;
-
-function disabledBooks() {
-  if (!disabledCache) {
-    try {
-      disabledCache = JSON.parse(localStorage.getItem(DISABLED_KEY) ?? "[]") as string[];
-    } catch {
-      disabledCache = [];
-    }
-  }
-  return disabledCache;
-}
+// --- Kitap başına açma/kapama ----------------------------------------------------
 
 export function setOcrEnabled(book: string, enabled: boolean) {
-  const rest = disabledBooks().filter((b) => b !== book);
-  disabledCache = enabled ? rest : [...rest, book];
-  localStorage.setItem(DISABLED_KEY, JSON.stringify(disabledCache));
-  listeners.forEach((l) => l());
+  set(bookKey("ocr-off", book), enabled ? undefined : true);
 }
 
 export function useOcrEnabled(book: string | null) {
-  return useSyncExternalStore(
-    (l) => {
-      listeners.add(l);
-      return () => listeners.delete(l);
-    },
-    () => !!book && !disabledBooks().includes(book),
-    () => false,
-  );
+  const off = useStored(book && bookKey("ocr-off", book), false);
+  return !!book && !off;
 }

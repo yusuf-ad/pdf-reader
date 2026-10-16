@@ -2,13 +2,12 @@
 
 // PDF'e gömülü içindekiler (outline) olmayan kitaplar için: kitabın basılı içindekiler
 // sayfası yapay zekayla okunur, basılı sayfa numaraları PDF sayfalarına eşlenir.
-// Yalnızca kullanıcı isteyince çalışır; sonuç kitap başına localStorage'da saklanır.
+// Yalnızca kullanıcı isteyince çalışır; sonuç kitap başına saklanır.
 
 import type { PDFDocumentProxy } from "pdfjs-dist";
-import { useSyncExternalStore } from "react";
 import type { OutlineItem } from "./book-context";
+import { bookKey, get, set, useStored } from "./storage";
 
-const PREFIX = "pdf-reader:toc:v1:";
 /** Basılı içindekiler genelde ilk sayfalarda */
 const SCAN_PAGES = 30;
 const SCAN_PAGE_CHARS = 3000;
@@ -21,40 +20,16 @@ const VOTE_ENTRIES = 12;
 export type TocEntry = { title: string; depth: number; page: number | null };
 export type TocResponse = { found: boolean; tocPages: number[]; entries: TocEntry[] };
 
-const listeners = new Set<() => void>();
-const cache = new Map<string, OutlineItem[] | null>();
-
 export function loadGeneratedToc(book: string): OutlineItem[] | null {
-  if (!cache.has(book)) {
-    try {
-      cache.set(book, JSON.parse(localStorage.getItem(PREFIX + book) ?? "null"));
-    } catch {
-      cache.set(book, null);
-    }
-  }
-  return cache.get(book) ?? null;
+  return get<OutlineItem[]>(bookKey("toc", book)) ?? null;
 }
 
 function save(book: string, items: OutlineItem[] | null) {
-  cache.set(book, items);
-  if (items) localStorage.setItem(PREFIX + book, JSON.stringify(items));
-  else localStorage.removeItem(PREFIX + book);
-  listeners.forEach((l) => l());
-}
-
-export function deleteGeneratedToc(book: string) {
-  save(book, null);
+  set(bookKey("toc", book), items ?? undefined);
 }
 
 export function useGeneratedToc(book: string | null) {
-  return useSyncExternalStore(
-    (l) => {
-      listeners.add(l);
-      return () => listeners.delete(l);
-    },
-    () => (book ? loadGeneratedToc(book) : null),
-    () => null,
-  );
+  return useStored<OutlineItem[] | null>(book && bookKey("toc", book), null);
 }
 
 // Dilden bağımsız karşılaştırma: aksanlar atılır, ı/i ayrımı yok sayılır

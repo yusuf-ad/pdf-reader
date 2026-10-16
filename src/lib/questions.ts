@@ -1,12 +1,13 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { get as getStored, set as setStored, useStored } from "./storage";
 
 // Yapamadığım sorular: PDF'ten kırpılan (ya da yapıştırılan) soru görüntüleri.
 // Görüntüler localStorage'a sığmayacağı için ayrı bir IndexedDB veritabanında tutulur.
 // Kitap kitaplıktan silinse de sorular kalır (görüntü kendi içinde saklı).
-// Sorular klasörlere ayrılır (ör. "Adverbial Clauses testi"); klasör listesi küçük olduğu
-// için localStorage'da tutulur.
+// Sorular klasörlere ayrılır (ör. "Adverbial Clauses testi"); klasör listesi diğer
+// kullanıcı verileriyle birlikte ortak depoda (storage.ts) tutulur.
 
 const DB_NAME = "pdf-reader-questions";
 const STORE = "questions";
@@ -132,34 +133,16 @@ export function imageUrl(blob: Blob) {
 
 // --- Klasörler -----------------------------------------------------------
 
-const FOLDERS_KEY = "pdf-reader:question-folders";
-const LAST_FOLDER_KEY = "pdf-reader:question-last-folder";
+const FOLDERS_KEY = "question-folders";
+const LAST_FOLDER_KEY = "question-last-folder";
 const NO_FOLDERS: Folder[] = [];
-let folderCache: Folder[] | null = null;
 
-function readFolders() {
-  if (folderCache) return folderCache;
-  try {
-    folderCache = JSON.parse(localStorage.getItem(FOLDERS_KEY) ?? "[]") as Folder[];
-  } catch {
-    folderCache = [];
-  }
-  return folderCache;
-}
-
-function writeFolders(next: Folder[]) {
-  folderCache = next;
-  try {
-    localStorage.setItem(FOLDERS_KEY, JSON.stringify(next));
-  } catch {
-    // depolama dolu: bu oturumda bellekte kalır
-  }
-  notify();
-}
+const readFolders = () => getStored<Folder[]>(FOLDERS_KEY) ?? NO_FOLDERS;
+const writeFolders = (next: Folder[]) => setStored(FOLDERS_KEY, next);
 
 /** Klasörler, ada göre sıralı. */
 export function useFolders() {
-  return useSyncExternalStore(subscribe, readFolders, () => NO_FOLDERS);
+  return useStored(FOLDERS_KEY, NO_FOLDERS);
 }
 
 export function createFolder(name: string): Folder {
@@ -189,13 +172,55 @@ export async function deleteFolder(id: string) {
 
 /** Yeni soru için önerilen klasör: en son kullanılan (bir testin sorularını art arda eklerken) */
 export function getLastFolder(): string | null {
-  const id = localStorage.getItem(LAST_FOLDER_KEY);
+  const id = getStored<string>(LAST_FOLDER_KEY);
   return id && readFolders().some((f) => f.id === id) ? id : null;
 }
 
 export function setLastFolder(id: string | null) {
-  if (id) localStorage.setItem(LAST_FOLDER_KEY, id);
-  else localStorage.removeItem(LAST_FOLDER_KEY);
+  setStored(LAST_FOLDER_KEY, id ?? undefined);
+}
+
+/** Kitabın anahtarı değişince ondan kırpılan sorular yeni anahtara bağlanır. */
+export async function renameBookQuestions(from: string, to: string) {
+  const all = await run<Question[]>("readonly", (s) => s.getAll());
+  for (const q of all.filter((q) => q.book === from)) {
+    const next = { ...q, book: to };
+    await run("readwrite", (s) => s.put(next));
+    if (cache) set(read().map((x) => (x.id === q.id ? next : x)));
+  }
+}
+
+// --- Yedek -----------------------------------------------------------------
+
+type QuestionBackup = Omit<Question, "image"> & { image: string };
+
+const toDataUrl = (blob: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+
+/** Sorular, görüntüleri data URL olarak (yedek dosyasına yazmak için). */
+export async function exportQuestions(): Promise<QuestionBackup[]> {
+  const all = await run<Question[]>("readonly", (s) => s.getAll());
+  return Promise.all(all.map(async (q) => ({ ...q, image: await toDataUrl(q.image) })));
+}
+
+/** Yedekteki soruları ekler; aynı kimlikli soru zaten varsa dokunmaz. */
+export async function importQuestions(items: QuestionBackup[]) {
+  const existing = new Set((await run<Question[]>("readonly", (s) => s.getAll())).map((q) => q.id));
+  const added: Question[] = [];
+  for (const item of items) {
+    if (existing.has(item.id)) continue;
+    const image = await (await fetch(item.image)).blob();
+    const q: Question = { ...item, image };
+    await run("readwrite", (s) => s.put(q));
+    added.push(q);
+  }
+  if (added.length && cache) set([...added, ...read()].sort(byNewest));
+  return added.length;
 }
 
 /** Eski "konu" alanı olan sorular aynı adlı klasöre taşınır. */

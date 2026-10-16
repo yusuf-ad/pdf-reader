@@ -18,12 +18,18 @@ import { splitSuggestions, type ChatMessage, type Reference } from "@/lib/chat";
 import { loadGeneratedToc } from "@/lib/generated-toc";
 import { getMarksText } from "@/lib/marks";
 import { getPageText } from "@/lib/pdf-search";
+import { bookKey, get, set } from "@/lib/storage";
 import { parseQuizRequest, parseSkill, SKILLS, skillLabel, type SkillRequest } from "@/lib/skills";
 import Quiz from "./quiz";
 
 const MAX_IMAGES = 4;
 // Büyük ekran görüntüleri bu boyuta küçültülür (istek küçük kalsın, yazı yine okunur)
 const MAX_IMAGE_SIDE = 2000;
+
+const profileStore = (book: string) => ({
+  get: () => get<string>(bookKey("profile", book)),
+  set: (profile: string) => set(bookKey("profile", book), profile),
+});
 
 /** Görseli küçültüp JPEG data URL'e çevirir. */
 async function toImagePart(file: File): Promise<FileUIPart> {
@@ -104,7 +110,7 @@ function ChatWindow({
   useEffect(() => {
     if (!open || !pdf || !book) return;
     let active = true;
-    getBookProfile(pdf, book, title, (p) => getPageText(pdf, p, book)).then((p) => {
+    getBookProfile(pdf, book, title, (p) => getPageText(pdf, p, book), profileStore(book)).then((p) => {
       if (active) setProfile(p);
     });
     return () => {
@@ -117,7 +123,7 @@ function ChatWindow({
     if (!pdf || !book) return {};
     const [info, profile, pageText, marks] = await Promise.all([
       getBookInfo(pdf),
-      getBookProfile(pdf, book, title, (p) => getPageText(pdf, p, book)),
+      getBookProfile(pdf, book, title, (p) => getPageText(pdf, p, book), profileStore(book)),
       getPageText(pdf, currentPage, book).catch(() => ""),
       getMarksText(pdf, book, currentPage).catch(() => null),
     ]);

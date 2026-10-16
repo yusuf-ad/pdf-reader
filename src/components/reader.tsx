@@ -4,20 +4,19 @@ import dynamic from "next/dynamic";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-  fileKey,
   addBook,
+  adoptLegacyData,
+  contentKey,
   getBook,
   getSaveHandle,
   listBooks,
   loadFile,
   removeBook,
-  requestPersistence,
   updateBook,
   type Book,
 } from "@/lib/file-store";
 import {
   addAnnotation,
-  deleteBookAnnotations,
   getBookAnnotations,
   HIGHLIGHT_COLORS,
   INK_COLORS,
@@ -26,13 +25,12 @@ import {
   type Tool,
 } from "@/lib/annotations";
 import type { Reference } from "@/lib/chat";
-import { deleteBookChatNotes } from "@/lib/chat-notes";
-import { deleteGeneratedToc } from "@/lib/generated-toc";
 import { deleteBookOcr, setOcrEnabled, useOcrEnabled } from "@/lib/ocr";
 import { getPageText, usePdfSearch } from "@/lib/pdf-search";
 import { cropPage, type NewQuestion } from "@/lib/questions";
 import { loadProgress, saveProgress, toggleBookmark, useBookmarks } from "@/lib/reading-state";
 import { extractSelection, selectedPdfText, selectionHighlights } from "@/lib/selection";
+import { deleteBook as deleteBookData, requestPersistence } from "@/lib/storage";
 import { makeTextRenderer } from "@/lib/text-highlight";
 import type { SavedWord, Translation } from "@/lib/types";
 import { useSavedWords } from "@/lib/use-saved-words";
@@ -56,10 +54,18 @@ const MIN_SCALE = 0.4;
 const MAX_SCALE = 3;
 const PAGE_TOP_GAP = 16;
 
+type LaunchQueue = {
+  setConsumer: (consumer: (params: { files?: FileSystemFileHandle[] }) => void) => void;
+};
+
+const RIGHT_PANEL_KEY = "pdf-reader:right-panel";
+
 const clampScale = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, +s.toFixed(2)));
 
 export default function Reader() {
   const [file, setFile] = useState<File | null>(null);
+  // Açık kitabın anahtarı (PDF içeriğinden; notlar buna bağlı)
+  const [key, setKey] = useState<string | null>(null);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [aspect, setAspect] = useState(1.414); // sayfa yüksekliği / genişliği
   const [rootWidth, setRootWidth] = useState(0);
@@ -71,7 +77,14 @@ export default function Reader() {
 
   const [leftOpen, setLeftOpen] = useState(false);
   const [leftTab, setLeftTab] = useState<LeftTab>("contents");
-  const [rightOpen, setRightOpen] = useState(true);
+  // Kelimeler/notlar paneli; kapatılırsa sonraki açılışta da kapalı kalır
+  const [rightOpen, setRightOpen] = useState(() => {
+    try {
+      return localStorage.getItem(RIGHT_PANEL_KEY) !== "closed";
+    } catch {
+      return true;
+    }
+  });
   const [focusMode, setFocusMode] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -116,7 +129,6 @@ export default function Reader() {
   >(null);
 
   const { words, add, remove, clear } = useSavedWords();
-  const key = file ? fileKey(file) : null;
   const bookmarks = useBookmarks(key);
   const ocrEnabled = useOcrEnabled(key);
   const numPages = pdf?.numPages ?? 0;
@@ -139,20 +151,23 @@ export default function Reader() {
   }, []);
 
   const openFile = useCallback(
-    (f: File | undefined) => {
+    async (f: File | undefined, knownKey?: string) => {
       if (!f || f.type !== "application/pdf") return;
+      const k = knownKey ?? (await contentKey(f));
+      await adoptLegacyData(f.name, f.size, k);
       closePopover();
       setLibraryOpen(false);
       setPdf(null);
       setScale(1);
       setCurrentPage(1);
       anchorRef.current = null;
-      pendingPageRef.current = loadProgress(fileKey(f));
+      pendingPageRef.current = loadProgress(k);
       scrollRef.current?.scrollTo({ top: 0 });
       setFile(f);
+      setKey(k);
       requestPersistence();
-      loadedKeyRef.current = fileKey(f);
-      savingBookRef.current = addBook(f, true).then(refreshBooks).catch(() => {});
+      loadedKeyRef.current = k;
+      savingBookRef.current = addBook(f, true, k).then(refreshBooks).catch(() => {});
     },
     [closePopover, refreshBooks],
   );
@@ -161,7 +176,7 @@ export default function Reader() {
     async (k: string) => {
       if (k === key) return setLibraryOpen(false);
       const f = await loadFile(k);
-      if (f) openFile(f);
+      if (f) openFile(f, k);
       else refreshBooks();
     },
     [key, openFile, refreshBooks],
@@ -191,6 +206,18 @@ export default function Reader() {
     [refreshBooks],
   );
 
+  // Kurulu uygulamada bir PDF "Birlikte aç" ile açıldıysa onu göster
+  const launchedRef = useRef(false);
+  useEffect(() => {
+    const queue = (window as { launchQueue?: LaunchQueue }).launchQueue;
+    queue?.setConsumer(async ({ files }) => {
+      const handle = files?.[0];
+      if (!handle) return;
+      launchedRef.current = true;
+      openFile(await handle.getFile());
+    });
+  }, [openFile]);
+
   // Sayfa yenilenince son okunan kitabı geri aç
   useEffect(() => {
     let active = true;
@@ -200,7 +227,7 @@ export default function Reader() {
         setBooks(list);
         const last = list.find((b) => b.openedAt);
         const f = last && (await loadFile(last.key));
-        if (active && f) openFile(f);
+        if (active && f && !launchedRef.current) openFile(f, last.key);
       })
       .catch(() => {});
     return () => {
@@ -292,6 +319,14 @@ export default function Reader() {
   useEffect(() => {
     if (pdf && key && pendingPageRef.current === null) saveProgress(key, currentPage);
   }, [pdf, key, currentPage]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(RIGHT_PANEL_KEY, rightOpen ? "open" : "closed");
+    } catch {
+      // yalnızca bu oturumda geçerli
+    }
+  }, [rightOpen]);
 
   // Kaydırma alanının genişliğini ölç
   useEffect(() => {
@@ -886,6 +921,7 @@ export default function Reader() {
             onGoTo={goTo}
             book={key}
             currentPage={currentPage}
+            onClose={() => setRightOpen(false)}
           />
         </ResizablePanel>
       )}
@@ -908,12 +944,11 @@ export default function Reader() {
             onOpen={openBook}
             onRemove={async (k) => {
               await removeBook(k);
-              deleteBookAnnotations(k);
+              deleteBookData(k);
               deleteBookOcr(k);
-              deleteGeneratedToc(k);
-              deleteBookChatNotes(k);
               if (k === key) {
                 setFile(null);
+                setKey(null);
                 setPdf(null);
               }
               refreshBooks();

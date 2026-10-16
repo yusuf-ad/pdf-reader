@@ -1,5 +1,10 @@
 import Reader from "@/components/reader";
+import StorageGate from "@/components/storage-gate";
 
 export default function Home() {
-  return <Reader />;
+  return (
+    <StorageGate>
+      <Reader />
+    </StorageGate>
+  );
 }

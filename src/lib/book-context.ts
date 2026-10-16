@@ -37,7 +37,6 @@ export const MARKS_CHARS = 16000;
 const SAMPLE_PAGES = 12;
 const SAMPLE_PAGE_CHARS = 2000;
 const OUTLINE_ITEMS = 200;
-const PROFILE_KEY = (book: string) => `pdf-reader:profile:v1:${book}`;
 
 export type OutlineItem = { title: string; depth: number; page: number | null };
 
@@ -118,8 +117,10 @@ export function getBookProfile(
   book: string,
   fileName: string | null,
   readPage: (page: number) => Promise<string>,
+  /** Profilin tarayıcıda saklandığı yer */
+  stored: { get: () => string | undefined; set: (profile: string) => void },
 ): Promise<string | null> {
-  const saved = localStorage.getItem(PROFILE_KEY(book));
+  const saved = stored.get();
   if (saved) return Promise.resolve(saved);
   let req = profileRequests.get(book);
   if (!req) {
@@ -145,7 +146,7 @@ export function getBookProfile(
       });
       if (!res.ok) throw new Error(await res.text());
       const { profile } = (await res.json()) as { profile: string };
-      localStorage.setItem(PROFILE_KEY(book), profile);
+      stored.set(profile);
       return profile;
     })().catch(() => {
       profileRequests.delete(book); // sonraki soruda yeniden denensin

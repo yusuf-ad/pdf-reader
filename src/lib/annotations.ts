@@ -1,8 +1,9 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { bookKey, get, set, subscribe, useStored } from "./storage";
 
-// Sayfalara eklenen kalem çizgileri, yazılar ve metin vurguları (kitap başına localStorage).
+// Sayfalara eklenen kalem çizgileri, yazılar ve metin vurguları (kitap başına).
 // Koordinatlar sayfa genişliği/yüksekliğine oranlanır (0–1); böylece her yakınlaştırmada
 // aynı yere düşer. Kalınlık ve yazı boyutu sayfa genişliğine oranlıdır.
 
@@ -53,27 +54,15 @@ export type Annotation = Stroke | Note | Highlight;
 
 type BookAnnotations = Record<number, Annotation[]>;
 
-const PREFIX = "pdf-reader:annotations:";
 const HISTORY_LIMIT = 100;
 const EMPTY: Annotation[] = [];
+const EMPTY_BOOK: BookAnnotations = {};
 
-const cache = new Map<string, BookAnnotations>();
-const listeners = new Set<() => void>();
 // Geri alma: her değişiklikten önceki sayfa durumu
 const history: { book: string; page: number; items: Annotation[] }[] = [];
 
-function load(book: string): BookAnnotations {
-  let data = cache.get(book);
-  if (!data) {
-    try {
-      data = JSON.parse(localStorage.getItem(PREFIX + book) ?? "{}") as BookAnnotations;
-    } catch {
-      data = {};
-    }
-    cache.set(book, data);
-  }
-  return data;
-}
+const key = (book: string) => bookKey("annotations", book);
+const load = (book: string) => get<BookAnnotations>(key(book)) ?? EMPTY_BOOK;
 
 function write(book: string, page: number, items: Annotation[], record = true) {
   const data = load(book);
@@ -84,21 +73,11 @@ function write(book: string, page: number, items: Annotation[], record = true) {
   const next = { ...data };
   if (items.length) next[page] = items;
   else delete next[page];
-  cache.set(book, next);
-  try {
-    localStorage.setItem(PREFIX + book, JSON.stringify(next));
-  } catch {
-    // Depolama dolu: bu oturumda bellekte kalır
-  }
-  listeners.forEach((l) => l());
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
+  set(key(book), Object.keys(next).length ? next : undefined);
 }
 
 export function usePageAnnotations(book: string | null, page: number) {
+  // Yalnızca bu sayfa değişince yeniden çizilsin
   return useSyncExternalStore(
     subscribe,
     () => (book && load(book)[page]) || EMPTY,
@@ -106,15 +85,9 @@ export function usePageAnnotations(book: string | null, page: number) {
   );
 }
 
-const EMPTY_BOOK: BookAnnotations = {};
-
 /** Kitabın tüm sayfalarındaki notlar (vurgu listesi için). */
 export function useBookAnnotations(book: string | null) {
-  return useSyncExternalStore(
-    subscribe,
-    () => (book ? load(book) : EMPTY_BOOK),
-    () => EMPTY_BOOK,
-  );
+  return useStored(book && key(book), EMPTY_BOOK);
 }
 
 /** Kitabın tüm notları (PDF'e yazarken). */
@@ -168,12 +141,6 @@ export function undo(book: string) {
     return true;
   }
   return false;
-}
-
-export function deleteBookAnnotations(book: string) {
-  cache.delete(book);
-  localStorage.removeItem(PREFIX + book);
-  listeners.forEach((l) => l());
 }
 
 /** Noktanın (px) çizgiye uzaklığı `radius` px'ten azsa true. */

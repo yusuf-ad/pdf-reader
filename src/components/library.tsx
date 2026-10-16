@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { downloadBackup, restoreBackup } from "@/lib/backup";
 import type { Book } from "@/lib/file-store";
 import { loadProgress } from "@/lib/reading-state";
 
@@ -52,6 +53,9 @@ export default function Library({ books, currentKey, adding, onOpen, onRemove, o
           PDF aç
         </button>
         <p className="mt-3 text-xs text-muted">ya da dosyaları buraya sürükle</p>
+        <div className="mt-12 border-t border-rule pt-4 text-xs text-muted">
+          Başka bir tarayıcıdan ya da cihazdan mı geliyorsun? <BackupButtons />
+        </div>
       </div>
     );
   }
@@ -95,6 +99,7 @@ export default function Library({ books, currentKey, adding, onOpen, onRemove, o
         >
           Kitap ekle
         </button>
+        <BackupButtons />
         {onClose && (
           <button onClick={onClose} className="text-sm text-muted hover:text-ink">
             Okumaya dön <kbd className="ml-1 border border-rule px-1 font-mono text-[11px]">Esc</kbd>
@@ -161,6 +166,45 @@ export default function Library({ books, currentKey, adding, onOpen, onRemove, o
         </ul>
       )}
     </div>
+  );
+}
+
+/** Notları, kelimeleri ve soruları tek dosyaya yedekler / yedekten geri yükler. */
+function BackupButtons() {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  return (
+    <span className="inline-flex items-center gap-3 text-sm">
+      <button
+        onClick={() => downloadBackup().catch(() => setMessage("Yedek alınamadı."))}
+        title="Kelimeler, notlar, vurgular, okuma durumu ve sorular tek bir dosyaya kaydedilir"
+        className="text-muted hover:text-ink"
+      >
+        Yedek al
+      </button>
+      <button onClick={() => inputRef.current?.click()} className="text-muted hover:text-ink">
+        Yedekten yükle
+      </button>
+      {message && <span className="text-xs text-muted">{message}</span>}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="application/json,.json"
+        hidden
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (!file) return;
+          try {
+            await restoreBackup(file);
+            setMessage("Yedek yüklendi. Kitapları ekleyince notları da gelir.");
+          } catch (err) {
+            setMessage((err as Error).message);
+          }
+        }}
+      />
+    </span>
   );
 }
 

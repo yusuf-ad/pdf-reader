@@ -1,6 +1,7 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Sans, Newsreader } from "next/font/google";
 import Script from "next/script";
+import ServiceWorker from "@/components/service-worker";
 import { THEME_STORAGE_KEY } from "@/lib/theme";
 import "./globals.css";
 
@@ -19,6 +20,13 @@ const plex = IBM_Plex_Sans({
 export const metadata: Metadata = {
   title: "Okuma",
   description: "Seçtiğin kelimeleri Türkçeye çeviren PDF okuyucu",
+  applicationName: "Okuma",
+  icons: { icon: "/icon.svg", apple: "/apple-icon.png" },
+  appleWebApp: { capable: true, title: "Okuma", statusBarStyle: "default" },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#ece8df",
 };
 
 // Sayfa boyanmadan önce kayıtlı temayı uygula (açılışta parlama olmasın)
@@ -37,6 +45,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           {themeScript}
         </Script>
         {children}
+        <ServiceWorker />
         {/* Gece teması sayfa filtresi: aydınlığı ters çevirir ama renk tonunu korur, sonucu
             tam olarak sayfa zemini (#1d2129) ile yazı rengi (#d8d4cb) arasına yerleştirir */}
         <svg aria-hidden width="0" height="0" className="absolute">

@@ -19,6 +19,7 @@ type Props = {
   /** Açık kitap; notlar sekmesi bu kitabın notlarını gösterir */
   book: string | null;
   currentPage: number;
+  onClose: () => void;
 };
 
 type Tab = "words" | "notes";
@@ -32,6 +33,7 @@ export default function WordList({
   onGoTo,
   book,
   currentPage,
+  onClose,
 }: Props) {
   const [tab, setTab] = useState<Tab>("words");
   const [query, setQuery] = useState("");
@@ -95,19 +97,29 @@ export default function WordList({
               </button>
             ))}
           </div>
-          {tab === "words" && words.length > 0 && (
-            <div className="flex gap-4 text-xs text-muted">
-              <button onClick={exportCsv} className="hover:text-ink">
-                CSV
-              </button>
-              <button
-                onClick={() => confirm("Tüm kelimeler silinsin mi?") && onClear()}
-                className="hover:text-accent"
-              >
-                Temizle
-              </button>
-            </div>
-          )}
+          <div className="flex items-baseline gap-4 text-xs text-muted">
+            {tab === "words" && words.length > 0 && (
+              <>
+                <button onClick={exportCsv} className="hover:text-ink">
+                  CSV
+                </button>
+                <button
+                  onClick={() => confirm("Tüm kelimeler silinsin mi?") && onClear()}
+                  className="hover:text-accent"
+                >
+                  Temizle
+                </button>
+              </>
+            )}
+            <button
+              onClick={onClose}
+              aria-label="Paneli kapat"
+              title="Paneli kapat  ]"
+              className="-mr-2 self-center px-2 text-lg leading-none hover:text-ink"
+            >
+              ×
+            </button>
+          </div>
         </div>
         {(tab === "words" ? words.length > 0 : noteCount > 0) && (
           <input
