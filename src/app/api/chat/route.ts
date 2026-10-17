@@ -1,17 +1,19 @@
 import { openai } from "@ai-sdk/openai";
-import { convertToModelMessages, generateText, streamText } from "ai";
+import { convertToModelMessages, generateText, hasToolCall, isStepCount, streamText } from "ai";
 import {
   formatBookContext,
   MARKS_CHARS,
   PAGE_TEXT_CHARS,
   type BookContext,
 } from "@/lib/book-context";
+import { formatMemory, memoryTools, sanitizeMemory } from "@/lib/memory";
 import { quizTools } from "@/lib/quiz";
 import {
   formatReference,
   splitSuggestions,
   SUGGESTIONS_CLOSE,
   SUGGESTIONS_OPEN,
+  isWebSearchPart,
   type ChatMessage,
 } from "@/lib/chat";
 import {
@@ -39,9 +41,11 @@ const SYSTEM = `Sen bir okuma asistanısın. Kullanıcı bir kitap/PDF okuyor ve
   - Tarih, felsefe vb.: geçen kişi, olay ve kavramlara okumayı kolaylaştıracak kadar arka plan ver.
 - Varsayılan olarak Türkçe cevap ver; kullanıcı başka dil isterse ona uy. Kısa ve net ol.
 - Metinde olmayan bir şeyi metindeymiş gibi söyleme; genel bilgini kullandığında bunu belli et.
+- web_search aracıyla internette arama yapabilirsin. Güncel bilgi gereken sorularda (bir kursun/ürünün şu anki hâli, son sürümler, tarihler, haberler, değişmiş olabilecek her şey) ya da kullanıcı açıkça "ara", "internette bak", "güncel" derse ara. Cevap kitapta veya genel bilgide zaten varsa arama. Aradıysan bulduğun bilgiyi kaynağına dayandır, kitaptaki bilgiyle çelişiyorsa ikisini de belirt.
 - Kullanıcının kitapta işaretlediği yerler <isaretler> içinde gelir: sayfa, renk, işaretin altındaki yazı ve geçtiği yer (işaretli satırdan başlayan metin). "İşaretlediğim", "sarıyla işaretli", "yanlış yaptığım sorular" gibi ifadeleri buna göre yorumla; ör. soru numarası işaretliyse o soru, geçtiği yerde başlayan sorudur. Rengin anlamını kullanıcı söylemediyse varsayma. Geçtiği yer kesik olabilir; eksik kısmı uydurma.
 - Kullanıcı görsel (genelde ekran görüntüsü) ekleyebilir. Görseldeki yazıyı dikkatle oku. Soru yoksa: yazıyı aynen aktar, Türkçe çevirisini ver ve kısaca açıkla. Okuyamadığın kısımları uydurma, okunamadığını söyle.
 - Kullanıcı test, quiz ya da soru çözmek isterse createQuiz aracını çağır; soruları okuduğu kitabın verilen metnine (<belge>, <sayfa_metni>, <acik_sayfa>, <secili_metin>) dayandır, soruları ayrıca metin olarak yazma. Kaç soru istediğini söylemediyse 5 soru hazırla. Metin yoksa ya da yetersizse test uydurma, bunu söyle.
+- Kullanıcı hakkında kalıcı bilgiler <hafiza> içinde gelir (varsa). Cevaplarını bunlara göre kişiselleştir (seviye, hedef, tercih edilen uzunluk ve tarz); hafızayı her cevapta anma, yalnızca işe yaradığında kullan. Sonraki sohbetlerde de işe yarayacak yeni bir bilgi öğrenirsen ya da kullanıcı "hatırla"/"unut" derse updateMemory aracını çağır, sonra cevabına devam et.
 - Her cevabın en sonuna, kullanıcının bir sonraki adımda sorabileceği 3 kısa takip sorusu ekle. Sorular bu cevaba ve kitaba özgü olsun, kullanıcının ağzından yazılsın, her biri en fazla 12 kelime. Tam olarak şu biçimde ve cevabın en sonunda:
 ${SUGGESTIONS_OPEN}
 - soru
@@ -60,22 +64,31 @@ export async function POST(req: Request) {
     );
   }
 
-  const { messages, book }: { messages: ChatMessage[]; book?: BookContext } =
-    await req.json();
+  const {
+    messages,
+    book,
+    memory: rawMemory,
+  }: { messages: ChatMessage[]; book?: BookContext; memory?: unknown } = await req.json();
+  // Hafıza kapalıysa istemci göndermez; o zaman araç da verilmez
+  const memory = rawMemory === undefined ? null : sanitizeMemory(rawMemory);
   const model = openai(process.env.OPENAI_MODEL || "gpt-6-luna");
   const last = messages.length - 1;
 
   const withReferences = await Promise.all(
     messages.map(async (m, i) => {
       // Önceki cevaplardaki öneri listeleri modele geri gönderilmez
+      // Önceki web aramaları da geri gönderilmez; cevap metni yeterli
+      // Hafıza değişiklikleri de gönderilmez; güncel hafıza sistem mesajında
       if (m.role === "assistant") {
         return {
           ...m,
-          parts: m.parts.map((p) =>
-            p.type === "text"
-              ? { ...p, text: splitSuggestions(p.text).body }
-              : p,
-          ),
+          parts: m.parts
+            .filter((p) => !isWebSearchPart(p) && p.type !== "source-url" && p.type !== "tool-updateMemory")
+            .map((p) =>
+              p.type === "text"
+                ? { ...p, text: splitSuggestions(p.text).body }
+                : p,
+            ),
         };
       }
       if (m.role !== "user") return m;
@@ -107,16 +120,25 @@ export async function POST(req: Request) {
 
   // /test komutunda model mutlaka test aracını çağırır
   const quiz = messages[last]?.metadata?.skill?.name === "test";
+  const system = [SYSTEM, memory && formatMemory(memory), book && bookBlock(book, messages[last])]
+    .filter(Boolean)
+    .join("\n\n");
   const result = streamText({
     model,
-    system: book ? `${SYSTEM}\n\n${bookBlock(book, messages[last])}` : SYSTEM,
+    system,
     messages: await convertToModelMessages(withReferences),
-    tools: quizTools,
+    tools: {
+      ...quizTools,
+      ...(memory ? memoryTools(memory) : {}),
+      web_search: openai.tools.webSearch({ searchContextSize: "medium" }),
+    },
     toolChoice: quiz ? { type: "tool", toolName: "createQuiz" } : "auto",
+    // Hafıza kaydından sonra model cevabına devam eder; test oluşunca durur (test cevabın kendisi)
+    stopWhen: [isStepCount(3), hasToolCall("createQuiz")],
     abortSignal: req.signal,
   });
 
-  return result.toUIMessageStreamResponse();
+  return result.toUIMessageStreamResponse({ sendSources: true });
 }
 
 /** Seçili metin veya skill varsa sayfa metni zaten mesajda; açık sayfa yalnızca serbest sorularda eklenir. */

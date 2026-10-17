@@ -1,6 +1,6 @@
 // Notları (kalem, yazı, vurgu) PDF'in içine yazar ve kaydeder. Kitaplıktaki kopya ve
 // uygulamadaki notlar olduğu gibi kalır; çıktı ayrı bir dosyadır.
-import fontkit from "@pdf-lib/fontkit";
+import fontkit from "@cantoo/fontkit";
 import {
   appendBezierCurve,
   BlendMode,
@@ -9,7 +9,11 @@ import {
   LineJoinStyle,
   lineTo,
   moveTo,
+  PDFDict,
   PDFDocument,
+  PDFInvalidObject,
+  PDFName,
+  PDFRef,
   popGraphicsState,
   pushGraphicsState,
   rgb,
@@ -20,7 +24,7 @@ import {
   stroke,
   type PDFFont,
   type PDFPage,
-} from "pdf-lib";
+} from "@cantoo/pdf-lib";
 import { strokePath, type Annotation, type Note, type Stroke } from "./annotations";
 
 // Türkçe harfler için gömülü font (pdf.js'in standart fontlarından, public/pdfjs altına kopyalanır)
@@ -136,9 +140,47 @@ function drawNote(page: PDFPage, note: Note, font: PDFFont, w: number, h: number
   });
 }
 
+/**
+ * PDF'i düzenlenebilir olarak açar. Kopyalama/yazdırma kısıtı olan PDF'ler (ör. ÖSYM) boş
+ * açılış parolasıyla şifrelenmiştir; boş parolayla çözülür, kayıt şifresiz olur. Şifre
+ * çözülmeden okunursa nesneler bozuk çıkar ("Expected instance of PDFDict…").
+ */
+async function loadPdf(bytes: ArrayBuffer) {
+  try {
+    const doc = await PDFDocument.load(bytes, { password: "", warnOnInvalidObjects: false });
+    dropEncryptionLeftovers(doc);
+    return doc;
+  } catch (err) {
+    if (/password/i.test((err as Error).message)) {
+      throw new Error("Bu PDF açılış parolasıyla korunuyor; notlu kopyası kaydedilemiyor.");
+    }
+    throw err;
+  }
+}
+
+/**
+ * Şifresi çözülen PDF'in eski xref akışları ve şifre sözlüğü kayda taşınmasın; yoksa kaydedilen
+ * dosya hâlâ şifreli sanılır ve bir sonraki kayıtta açılamaz. Okunamayan (ham kopyalanan)
+ * nesnelerden yalnızca bunlara ait olanlar atılır.
+ */
+function dropEncryptionLeftovers(doc: PDFDocument) {
+  const { context } = doc;
+  const latin1 = new TextDecoder("latin1");
+  for (const [ref, obj] of context.enumerateIndirectObjects()) {
+    const dict = obj instanceof PDFDict ? obj : (obj as { dict?: unknown }).dict;
+    const type = dict instanceof PDFDict ? dict.get(PDFName.of("Type")) : undefined;
+    const stale =
+      obj instanceof PDFInvalidObject && /\/(XRef|Encrypt)/.test(latin1.decode((obj as unknown as { data: Uint8Array }).data));
+    if (stale || type === PDFName.of("XRef") || type === PDFName.of("ObjStm")) context.delete(ref);
+  }
+  const encrypt = context.trailerInfo.Encrypt;
+  if (encrypt instanceof PDFRef) context.delete(encrypt);
+  context.trailerInfo.Encrypt = undefined;
+}
+
 /** Notları PDF'e yazılmış yeni bir PDF üretir. */
 export async function exportAnnotatedPdf(file: File, annotations: Record<number, Annotation[]>) {
-  const doc = await PDFDocument.load(await file.arrayBuffer(), { ignoreEncryption: true });
+  const doc = await loadPdf(await file.arrayBuffer());
   doc.registerFontkit(fontkit);
   const needsFont = Object.values(annotations).some((items) => items.some((a) => a.type === "text"));
   const font = needsFont

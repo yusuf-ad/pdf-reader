@@ -466,11 +466,16 @@ export default function Reader() {
       (document.activeElement as HTMLElement | null)?.blur();
       setSaving(true);
       try {
-        const { chooseTarget, writeTarget } = await import("@/lib/save-target");
+        const { chooseTarget, discardTarget, writeTarget } = await import("@/lib/save-target");
         const target = await chooseTarget(key, file.name, saveAs);
         if (!target) return;
-        const { exportAnnotatedPdf } = await import("@/lib/export-pdf");
-        await writeTarget(key, target, await exportAnnotatedPdf(file, getBookAnnotations(key)), file.name);
+        try {
+          const { exportAnnotatedPdf } = await import("@/lib/export-pdf");
+          await writeTarget(key, target, await exportAnnotatedPdf(file, getBookAnnotations(key)), file.name);
+        } catch (err) {
+          await discardTarget(target);
+          throw err;
+        }
         if (target !== "download") setSavedTo({ book: key, name: target.name });
         setJustSaved(true);
         setTimeout(() => setJustSaved(false), 2000);

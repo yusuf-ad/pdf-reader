@@ -25,14 +25,19 @@ async function writable(handle: Permissioned) {
   return (await handle.requestPermission?.(opts)) === "granted";
 }
 
+// Bu oturumda kayıt penceresiyle yeni oluşturulan dosyalar (henüz içi boş)
+const fresh = new WeakSet<FileSystemFileHandle>();
+
 async function pick(name: string): Promise<SaveTarget> {
   const show = picker();
   if (!show) return "download";
   try {
-    return await show({
+    const handle = await show({
       suggestedName: name,
       types: [{ description: "PDF", accept: { "application/pdf": [".pdf"] } }],
     });
+    fresh.add(handle);
+    return handle;
   } catch (err) {
     if ((err as Error).name === "AbortError") return null;
     return "download"; // pencere açılamadı (ör. iframe)
@@ -46,6 +51,16 @@ export async function chooseTarget(book: string, name: string, saveAs: boolean):
     if (saved && (await writable(saved).catch(() => false))) return saved;
   }
   return pick(name);
+}
+
+/**
+ * Kayıt başarısız olduysa, kayıt penceresinin az önce oluşturduğu boş dosyayı siler.
+ * Daha önce kaydedilmiş (içi dolu) dosyaya dokunmaz.
+ */
+export async function discardTarget(target: SaveTarget) {
+  if (!target || target === "download" || !fresh.has(target)) return;
+  fresh.delete(target);
+  await (target as FileSystemFileHandle & { remove?: () => Promise<void> }).remove?.().catch(() => {});
 }
 
 /** PDF'i hedefe yazar ve hedefi hatırlar. */
@@ -64,6 +79,7 @@ export async function writeTarget(book: string, target: FileSystemFileHandle | "
     const stream = await target.createWritable();
     await stream.write(blob);
     await stream.close();
+    fresh.delete(target);
   } catch (err) {
     // Dosya taşındı/silindi: bir dahaki kayıtta yeniden sorulsun
     await setSaveHandle(book, null).catch(() => {});

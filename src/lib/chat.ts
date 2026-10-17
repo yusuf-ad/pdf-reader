@@ -1,4 +1,5 @@
 import type { UIDataTypes, UIMessage } from "ai";
+import type { MemoryTools } from "./memory";
 import type { QuizTools } from "./quiz";
 import type { SkillRequest } from "./skills";
 
@@ -13,7 +14,7 @@ export type Reference = {
   pageText?: string;
 };
 
-export type ChatMessage = UIMessage<{ reference?: Reference; skill?: SkillRequest }, UIDataTypes, QuizTools>;
+export type ChatMessage = UIMessage<{ reference?: Reference; skill?: SkillRequest }, UIDataTypes, QuizTools & MemoryTools>;
 
 export function formatReference(ref: Reference) {
   const where = [ref.fileName, ref.page && `sayfa ${ref.page}`].filter(Boolean).join(", ");
@@ -54,3 +55,9 @@ export function splitSuggestions(text: string) {
           .slice(0, 3);
   return { body: text.slice(0, start).trimEnd(), suggestions };
 }
+
+/**
+ * Modelin internette arama adımı (OpenAI web_search, sunucuda çalışır). Mesaj tipinde yer
+ * almadığı için türe göre tanınır.
+ */
+export const isWebSearchPart = (p: { type: string }) => p.type === "tool-web_search";

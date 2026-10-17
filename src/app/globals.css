@@ -208,11 +208,11 @@ body {
 }
 /* Sohbet cevapları (markdown) */
 .chat-md > * + * {
-  margin-top: 0.7em;
+  margin-top: 0.85em;
 }
 .chat-md ul,
 .chat-md ol {
-  padding-left: 1.3em;
+  padding-left: 1.4em;
 }
 .chat-md ul {
   list-style: disc;
@@ -221,23 +221,72 @@ body {
   list-style: decimal;
 }
 .chat-md li + li {
-  margin-top: 0.25em;
+  margin-top: 0.4em;
+}
+.chat-md li > ul,
+.chat-md li > ol {
+  margin-top: 0.4em;
 }
 .chat-md li::marker {
-  color: var(--muted);
+  color: var(--accent);
 }
 .chat-md strong {
   font-weight: 600;
+  color: var(--ink);
 }
+/* Başlıklar gövdeden belirgin ayrılsın; üstte nefes payı, altta metne yakın */
 .chat-md h1,
 .chat-md h2,
-.chat-md h3 {
+.chat-md h3,
+.chat-md h4 {
   font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+.chat-md h1 {
+  font-size: 1.35em;
+}
+.chat-md h2 {
+  font-size: 1.2em;
+}
+.chat-md h3,
+.chat-md h4 {
   font-size: 1.05em;
 }
+.chat-md > :is(h1, h2, h3, h4):not(:first-child) {
+  margin-top: 1.5em;
+}
+.chat-md > :is(h1, h2, h3, h4) + * {
+  margin-top: 0.45em;
+}
+.chat-md hr {
+  margin: 1.6em 0;
+  border: 0;
+  border-top: 1px solid var(--rule);
+}
+.chat-md a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.chat-md table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+.chat-md th,
+.chat-md td {
+  border-bottom: 1px solid var(--rule);
+  padding: 0.35em 0.6em 0.35em 0;
+  text-align: left;
+  vertical-align: top;
+}
+.chat-md th {
+  font-weight: 600;
+}
 .chat-md blockquote {
-  border-left: 2px solid var(--rule);
-  padding-left: 0.8em;
+  border-left: 2px solid var(--accent);
+  padding-left: 0.9em;
   color: var(--muted);
 }
 .chat-md code {

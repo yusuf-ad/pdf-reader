@@ -1,7 +1,7 @@
 // Klasördeki soruları alt alta dizip tek bir PDF yapar (tekrar çözmek için).
 // Her soru tek parça kalır: sayfaya sığmazsa sonraki sayfaya geçer.
-import fontkit from "@pdf-lib/fontkit";
-import { PDFDocument, rgb, type PDFImage } from "pdf-lib";
+import fontkit from "@cantoo/fontkit";
+import { PDFDocument, rgb, type PDFImage } from "@cantoo/pdf-lib";
 import type { Question } from "./questions";
 
 // Türkçe harfler için gömülü font (export-pdf ile aynı)
