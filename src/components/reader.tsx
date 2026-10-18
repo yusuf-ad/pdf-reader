@@ -352,6 +352,49 @@ export default function Reader() {
     setScale(clampScale(available / aspect / baseWidth));
   }, [baseWidth, aspect]);
 
+  // Orta tuşa basılı tutup sürükleyerek kaydırma (el aracı)
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    let pan: { id: number; x: number; y: number; left: number; top: number } | null = null;
+    const onDown = (e: PointerEvent) => {
+      if (e.button !== 1) return;
+      // Tarayıcının kendi otomatik kaydırması devreye girmesin
+      e.preventDefault();
+      e.stopPropagation();
+      pan = { id: e.pointerId, x: e.clientX, y: e.clientY, left: el.scrollLeft, top: el.scrollTop };
+      el.setPointerCapture(e.pointerId);
+      el.style.cursor = "grabbing";
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!pan || e.pointerId !== pan.id) return;
+      el.scrollLeft = pan.left - (e.clientX - pan.x);
+      el.scrollTop = pan.top - (e.clientY - pan.y);
+    };
+    const onUp = (e: PointerEvent) => {
+      if (!pan || e.pointerId !== pan.id) return;
+      pan = null;
+      el.style.cursor = "";
+    };
+    const blockMiddle = (e: MouseEvent) => {
+      if (e.button === 1) e.preventDefault();
+    };
+    el.addEventListener("pointerdown", onDown, { capture: true });
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerup", onUp);
+    el.addEventListener("pointercancel", onUp);
+    el.addEventListener("mousedown", blockMiddle, { capture: true });
+    el.addEventListener("auxclick", blockMiddle, { capture: true });
+    return () => {
+      el.removeEventListener("pointerdown", onDown, { capture: true });
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointercancel", onUp);
+      el.removeEventListener("mousedown", blockMiddle, { capture: true });
+      el.removeEventListener("auxclick", blockMiddle, { capture: true });
+    };
+  }, []);
+
   // Ctrl + fare tekerleği
   useEffect(() => {
     const el = scrollRef.current;
@@ -994,6 +1037,7 @@ export default function Reader() {
         onClearReference={() => setChatReference(null)}
         chatId={key ?? "genel"}
         title={file?.name.replace(/\.pdf$/i, "") ?? null}
+        fileName={file?.name ?? null}
         pdf={pdf}
         book={key}
         currentPage={currentPage}

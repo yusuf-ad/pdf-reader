@@ -8,16 +8,32 @@ const EMPTY: SavedWord[] = [];
 
 const read = () => get<SavedWord[]>(KEY) ?? EMPTY;
 
-function add(entry: Omit<SavedWord, "id" | "createdAt">) {
+type Entry = Omit<SavedWord, "id" | "createdAt">;
+
+/** Aynı kelime + aynı cümle mi (listede tekrar sayılır). */
+export const sameWord = (a: Pick<SavedWord, "word" | "sentence">, b: Pick<SavedWord, "word" | "sentence">) =>
+  a.word.toLowerCase() === b.word.toLowerCase() && a.sentence === b.sentence;
+
+function add(entry: Entry) {
+  addMany([entry]);
+}
+
+/** Kelimeleri verilen sırayla en üste ekler; eklenenlerin id'lerini döner. */
+function addMany(entries: Entry[]) {
   // Aynı kelime + aynı cümle tekrar seçilirse çoğaltma, en üste taşı
-  const rest = read().filter(
-    (w) => !(w.word.toLowerCase() === entry.word.toLowerCase() && w.sentence === entry.sentence),
-  );
-  set(KEY, [{ ...entry, id: crypto.randomUUID(), createdAt: Date.now() }, ...rest]);
+  const rest = read().filter((w) => !entries.some((e) => sameWord(w, e)));
+  const now = Date.now();
+  const added = entries.map((e) => ({ ...e, id: crypto.randomUUID(), createdAt: now }));
+  set(KEY, [...added, ...rest]);
+  return added.map((w) => w.id);
 }
 
 function remove(id: string) {
-  set(KEY, read().filter((w) => w.id !== id));
+  removeMany([id]);
+}
+
+function removeMany(ids: string[]) {
+  set(KEY, read().filter((w) => !ids.includes(w.id)));
 }
 
 function clear() {
@@ -26,5 +42,5 @@ function clear() {
 
 export function useSavedWords() {
   const words = useStored(KEY, EMPTY);
-  return { words, add, remove, clear };
+  return { words, add, addMany, remove, removeMany, clear };
 }

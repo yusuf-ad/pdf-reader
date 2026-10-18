@@ -2,6 +2,7 @@ import type { UIDataTypes, UIMessage } from "ai";
 import type { MemoryTools } from "./memory";
 import type { QuizTools } from "./quiz";
 import type { SkillRequest } from "./skills";
+import type { WordTools } from "./words";
 
 /** Sohbete eklenen PDF bölümü. */
 export type Reference = {
@@ -14,7 +15,7 @@ export type Reference = {
   pageText?: string;
 };
 
-export type ChatMessage = UIMessage<{ reference?: Reference; skill?: SkillRequest }, UIDataTypes, QuizTools & MemoryTools>;
+export type ChatMessage = UIMessage<{ reference?: Reference; skill?: SkillRequest }, UIDataTypes, QuizTools & MemoryTools & WordTools>;
 
 export function formatReference(ref: Reference) {
   const where = [ref.fileName, ref.page && `sayfa ${ref.page}`].filter(Boolean).join(", ");

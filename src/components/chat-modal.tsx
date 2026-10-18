@@ -3,7 +3,14 @@
 import { useChat } from "@ai-sdk/react";
 import type { FileUIPart } from "ai";
 import type { PDFDocumentProxy } from "pdfjs-dist";
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import ReactMarkdown from "react-markdown";
 import {
   chapterAt,
@@ -23,9 +30,19 @@ import {
   type ChatSession,
 } from "@/lib/chat-history";
 import { addChatNote, removeChatNote, useChatNotes } from "@/lib/chat-notes";
-import { isWebSearchPart, splitSuggestions, type ChatMessage, type Reference } from "@/lib/chat";
+import {
+  isWebSearchPart,
+  splitSuggestions,
+  type ChatMessage,
+  type Reference,
+} from "@/lib/chat";
 import { loadGeneratedToc } from "@/lib/generated-toc";
-import { isChangeActive, MEMORY_MAX_CHARS, MEMORY_MAX_ITEMS, type MemoryChange } from "@/lib/memory";
+import {
+  isChangeActive,
+  MEMORY_MAX_CHARS,
+  MEMORY_MAX_ITEMS,
+  type MemoryChange,
+} from "@/lib/memory";
 import {
   addMemory,
   applyChanges,
@@ -40,8 +57,16 @@ import {
 import { getMarksText } from "@/lib/marks";
 import { getPageText } from "@/lib/pdf-search";
 import { bookKey, get, set } from "@/lib/storage";
-import { parseQuizRequest, parseSkill, SKILLS, skillLabel, type SkillRequest } from "@/lib/skills";
+import {
+  parseQuizRequest,
+  parseSkill,
+  parseWordsRequest,
+  SKILLS,
+  skillLabel,
+  type SkillRequest,
+} from "@/lib/skills";
 import Quiz from "./quiz";
+import WordProposal from "./word-proposal";
 
 const MAX_IMAGES = 4;
 // Büyük ekran görüntüleri bu boyuta küçültülür (istek küçük kalsın, yazı yine okunur)
@@ -55,7 +80,10 @@ const profileStore = (book: string) => ({
 /** Görseli küçültüp JPEG data URL'e çevirir. */
 async function toImagePart(file: File): Promise<FileUIPart> {
   const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(bitmap.width, bitmap.height));
+  const scale = Math.min(
+    1,
+    MAX_IMAGE_SIDE / Math.max(bitmap.width, bitmap.height),
+  );
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(bitmap.width * scale);
   canvas.height = Math.round(bitmap.height * scale);
@@ -72,7 +100,8 @@ async function toImagePart(file: File): Promise<FileUIPart> {
   };
 }
 
-const imagesIn = (files: Iterable<File>) => [...files].filter((f) => f.type.startsWith("image/"));
+const imagesIn = (files: Iterable<File>) =>
+  [...files].filter((f) => f.type.startsWith("image/"));
 
 type Props = {
   open: boolean;
@@ -83,6 +112,8 @@ type Props = {
   /** Her dosyanın sohbeti ayrı tutulur */
   chatId: string;
   title: string | null;
+  /** Açık dosyanın tam adı; sohbetten eklenen kelimeler buna bağlanır */
+  fileName: string | null;
   /** Skill'ler (/ozet, /sayfa) belge metnini buradan okur */
   pdf: PDFDocumentProxy | null;
   book: string | null;
@@ -106,9 +137,15 @@ export default function ChatModal(props: Props) {
     id: latestSession(props.chatId)?.id ?? newSessionId(),
   }));
   if (session.chatId !== props.chatId) {
-    setSession({ chatId: props.chatId, id: latestSession(props.chatId)?.id ?? newSessionId() });
+    setSession({
+      chatId: props.chatId,
+      id: latestSession(props.chatId)?.id ?? newSessionId(),
+    });
   }
-  const openSession = useCallback((id: string) => setSession({ chatId: props.chatId, id }), [props.chatId]);
+  const openSession = useCallback(
+    (id: string) => setSession({ chatId: props.chatId, id }),
+    [props.chatId],
+  );
 
   // Sohbet kapatılınca kaybolmasın diye bileşen hep bağlı kalır, yalnızca gizlenir
   return (
@@ -135,6 +172,7 @@ function ChatWindow({
   onClearReference,
   chatId,
   title,
+  fileName,
   pdf,
   book,
   currentPage,
@@ -148,7 +186,13 @@ function ChatWindow({
   useEffect(() => {
     if (!open || !pdf || !book) return;
     let active = true;
-    getBookProfile(pdf, book, title, (p) => getPageText(pdf, p, book), profileStore(book)).then((p) => {
+    getBookProfile(
+      pdf,
+      book,
+      title,
+      (p) => getPageText(pdf, p, book),
+      profileStore(book),
+    ).then((p) => {
       if (active) setProfile(p);
     });
     return () => {
@@ -161,7 +205,13 @@ function ChatWindow({
     if (!pdf || !book) return {};
     const [info, profile, pageText, marks] = await Promise.all([
       getBookInfo(pdf),
-      getBookProfile(pdf, book, title, (p) => getPageText(pdf, p, book), profileStore(book)),
+      getBookProfile(
+        pdf,
+        book,
+        title,
+        (p) => getPageText(pdf, p, book),
+        profileStore(book),
+      ),
       getPageText(pdf, currentPage, book).catch(() => ""),
       getMarksText(pdf, book, currentPage).catch(() => null),
     ]);
@@ -174,27 +224,36 @@ function ChatWindow({
         page: currentPage,
         numPages: pdf.numPages,
         // Gömülü içindekiler yoksa kullanıcının oluşturduğu içindekiler
-        chapter: chapterAt(info.outline.length ? info.outline : (loadGeneratedToc(book) ?? []), currentPage),
+        chapter: chapterAt(
+          info.outline.length ? info.outline : (loadGeneratedToc(book) ?? []),
+          currentPage,
+        ),
         pageText: pageText.trim().slice(0, PAGE_TEXT_CHARS) || null,
         marks,
       },
     };
   };
 
-  const { messages, sendMessage, status, stop, error, regenerate } = useChat<ChatMessage>({
-    id: chatId,
-    // Kaydedilmiş sohbet kaldığı yerden devam eder (bileşen sohbet değişince yeniden kurulur)
-    messages: loadSession(chatId, sessionId),
-    // Akış sırasında arayüzü her parçada değil en fazla 50 ms'de bir güncelle
-    throttle: 50,
-    // Modelin hafıza değişiklikleri cevap bitince yerel hafızaya yazılır
-    onFinish: ({ message }) => applyChanges(memoryChangesOf(message)),
-  });
+  const { messages, sendMessage, status, stop, error, regenerate } =
+    useChat<ChatMessage>({
+      id: chatId,
+      // Kaydedilmiş sohbet kaldığı yerden devam eder (bileşen sohbet değişince yeniden kurulur)
+      messages: loadSession(chatId, sessionId),
+      // Akış sırasında arayüzü her parçada değil en fazla 50 ms'de bir güncelle
+      throttle: 50,
+      // Modelin hafıza değişiklikleri cevap bitince yerel hafızaya yazılır
+      onFinish: ({ message }) => applyChanges(memoryChangesOf(message)),
+    });
 
   // Cevap bitince (akış sırasında her parçada değil) sohbeti kaydet
   const savedRef = useRef(messages);
   useEffect(() => {
-    if (status === "submitted" || status === "streaming" || savedRef.current === messages) return;
+    if (
+      status === "submitted" ||
+      status === "streaming" ||
+      savedRef.current === messages
+    )
+      return;
     savedRef.current = messages;
     saveSession(chatId, sessionId, messages);
   }, [chatId, sessionId, messages, status]);
@@ -213,12 +272,19 @@ function ChatWindow({
   // Kullanıcı yukarı kaydırdıysa yeni gelen cevap onu aşağı çekmesin
   const stickRef = useRef(true);
   // Skill için sayfalar okunurken ilerleme
-  const [reading, setReading] = useState<{ done: number; total: number } | null>(null);
+  const [reading, setReading] = useState<{
+    done: number;
+    total: number;
+  } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const cancelReadRef = useRef(false);
   // Kitap bilgisi hazırlanırken (ilk soruda profil çıkarılıyor olabilir)
   const [preparing, setPreparing] = useState(false);
-  const busy = status === "submitted" || status === "streaming" || reading !== null || preparing;
+  const busy =
+    status === "submitted" ||
+    status === "streaming" ||
+    reading !== null ||
+    preparing;
   const chatNotes = useChatNotes(book);
   // toggleNote her akış parçasında değişmesin (mesajlar memo'lu)
   const latestRef = useRef({ messages, chatNotes, book, currentPage });
@@ -227,26 +293,26 @@ function ChatWindow({
   });
 
   /** Cevabı, sorulan soruyla ve sayfasıyla birlikte notlara ekler ya da çıkarır. */
-  const toggleNote = useCallback(
-    (index: number) => {
-      const { messages, chatNotes, book, currentPage } = latestRef.current;
-      const answer = messages[index];
-      if (!book || !answer) return;
-      if (chatNotes.some((n) => n.messageId === answer.id)) return removeChatNote(book, answer.id);
-      const asked = messages[index - 1];
-      const meta = asked?.metadata;
-      const question = meta?.skill
-        ? skillLabel(meta.skill)
-        : [meta?.reference?.text, asked ? textOf(asked) : ""].filter(Boolean).join(" — ");
-      addChatNote(book, {
-        messageId: answer.id,
-        text: splitSuggestions(textOf(answer)).body,
-        question: question.slice(0, 300),
-        page: meta?.reference?.page ?? (meta?.skill ? null : currentPage),
-      });
-    },
-    [],
-  );
+  const toggleNote = useCallback((index: number) => {
+    const { messages, chatNotes, book, currentPage } = latestRef.current;
+    const answer = messages[index];
+    if (!book || !answer) return;
+    if (chatNotes.some((n) => n.messageId === answer.id))
+      return removeChatNote(book, answer.id);
+    const asked = messages[index - 1];
+    const meta = asked?.metadata;
+    const question = meta?.skill
+      ? skillLabel(meta.skill)
+      : [meta?.reference?.text, asked ? textOf(asked) : ""]
+          .filter(Boolean)
+          .join(" — ");
+    addChatNote(book, {
+      messageId: answer.id,
+      text: splitSuggestions(textOf(answer)).body,
+      question: question.slice(0, 300),
+      page: meta?.reference?.page ?? (meta?.skill ? null : currentPage),
+    });
+  }, []);
 
   /** Mesajı kitap bilgisiyle birlikte gönderir. */
   const send = async (message: Parameters<typeof sendMessage>[0]) => {
@@ -261,6 +327,39 @@ function ChatWindow({
     }
     await sendMessage(message, { body });
   };
+
+  // Mesajlar memo'lu: düzenle / yeniden sor her çizimde değişmesin
+  const resendRef = useRef<(id: string, text?: string) => void>(() => {});
+  const resendNow = async (id: string, text?: string) => {
+    const asked = messages.find((m) => m.id === id);
+    if (!asked) return;
+    stickRef.current = true;
+    setNotice(null);
+    if (text === undefined) {
+      // Aynı soru: sonrasındaki cevaplar silinip yeniden sorulur
+      setPreparing(true);
+      let body: object = memoryBody();
+      try {
+        body = { ...body, ...(await bookBody()) };
+      } catch {
+        // Kitap bilgisi okunamazsa soru yine gider
+      } finally {
+        setPreparing(false);
+      }
+      await regenerate({ messageId: id, body });
+      return;
+    }
+    // Düzenlenen soru yerinde değişir; görselleri ve seçili metni korunur
+    const files = asked.parts.filter((p) => p.type === "file");
+    send({ text, files, metadata: asked.metadata, messageId: id });
+  };
+  useEffect(() => {
+    resendRef.current = resendNow;
+  });
+  const resend = useCallback(
+    (id: string, text?: string) => resendRef.current(id, text),
+    [],
+  );
 
   useEffect(() => {
     if (open) inputRef.current?.focus();
@@ -291,8 +390,12 @@ function ChatWindow({
   const addImages = async (files: File[]) => {
     const picked = imagesIn(files);
     if (!picked.length) return;
-    const parts = await Promise.all(picked.map((f) => toImagePart(f).catch(() => null)));
-    setImages((prev) => [...prev, ...parts.filter((p) => p !== null)].slice(0, MAX_IMAGES));
+    const parts = await Promise.all(
+      picked.map((f) => toImagePart(f).catch(() => null)),
+    );
+    setImages((prev) =>
+      [...prev, ...parts.filter((p) => p !== null)].slice(0, MAX_IMAGES),
+    );
     inputRef.current?.focus();
   };
 
@@ -337,7 +440,12 @@ function ChatWindow({
     } finally {
       setReading(null);
     }
-    send({ text, metadata: { skill: { name, from, to, fileName: title, pages, emptyPages, ...extra } } });
+    send({
+      text,
+      metadata: {
+        skill: { name, from, to, fileName: title, pages, emptyPages, ...extra },
+      },
+    });
   };
 
   const ask = (text: string) => {
@@ -348,7 +456,9 @@ function ChatWindow({
 
   const submit = () => {
     // Referans varken boş gönderilirse açıklama istenir (kelime listesinden hızlı sorma)
-    const text = input.trim() || (reference && !images.length ? explainPrompt(reference) : "");
+    const text =
+      input.trim() ||
+      (reference && !images.length ? explainPrompt(reference) : "");
     if ((!text && !images.length) || busy) return;
     setNotice(null);
     if (text === "/clear") {
@@ -367,15 +477,34 @@ function ChatWindow({
     }
     // "15 soruluk test hazırla" gibi komutsuz test isteği: sayfa belirtilmediyse tüm PDF okunur.
     // Seçili metin ya da görsel varsa test onlardan hazırlanır (normal soru gibi gider).
-    const quiz = !reference && !images.length && pdf ? parseQuizRequest(text, pdf.numPages, currentPage) : null;
+    const quiz =
+      !reference && !images.length && pdf
+        ? parseQuizRequest(text, pdf.numPages, currentPage)
+        : null;
     if (quiz) {
       setInput("");
-      runSkill(text, "test", quiz.from, quiz.to, { count: quiz.count, request: text });
+      runSkill(text, "test", quiz.from, quiz.to, {
+        count: quiz.count,
+        request: text,
+      });
+      return;
+    }
+    // "bu PDF'teki zıtlık bağlaçlarını kelimelere ekle": sayfalar okunur, öneriler önizlemeyle gelir
+    const words =
+      !reference && !images.length && pdf
+        ? parseWordsRequest(text, pdf.numPages, currentPage)
+        : null;
+    if (words) {
+      setInput("");
+      runSkill(text, "kelime", words.from, words.to, { request: text });
       return;
     }
     setInput("");
     const metadata = reference ? { reference } : undefined;
-    if (images.length) send(text ? { text, files: images, metadata } : { files: images, metadata });
+    if (images.length)
+      send(
+        text ? { text, files: images, metadata } : { files: images, metadata },
+      );
     else send({ text, metadata });
     setImages([]);
     onClearReference();
@@ -399,7 +528,8 @@ function ChatWindow({
         setDropping(true);
       }}
       onDragLeave={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropping(false);
+        if (!e.currentTarget.contains(e.relatedTarget as Node))
+          setDropping(false);
       }}
       onDrop={(e) => {
         e.preventDefault();
@@ -429,7 +559,9 @@ function ChatWindow({
           </button>
           {sessions.length > 0 && (
             <button
-              onClick={() => setPanel((v) => (v === "history" ? null : "history"))}
+              onClick={() =>
+                setPanel((v) => (v === "history" ? null : "history"))
+              }
               className={showHistory ? "text-ink" : "hover:text-ink"}
               disabled={busy}
             >
@@ -437,7 +569,11 @@ function ChatWindow({
             </button>
           )}
           {messages.length > 0 && (
-            <button onClick={newChat} className="hover:text-ink" disabled={busy}>
+            <button
+              onClick={newChat}
+              className="hover:text-ink"
+              disabled={busy}
+            >
               Yeni sohbet
             </button>
           )}
@@ -451,7 +587,8 @@ function ChatWindow({
         ref={listRef}
         onScroll={(e) => {
           const el = e.currentTarget;
-          stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+          stickRef.current =
+            el.scrollHeight - el.scrollTop - el.clientHeight < 40;
         }}
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-6"
       >
@@ -459,8 +596,13 @@ function ChatWindow({
         <div className="mx-auto max-w-[70ch]">
           {panel && (
             <div className="mb-4 flex items-baseline gap-3 border-b border-rule pb-2">
-              <h3 className="flex-1 font-serif text-base">{panel === "memory" ? "Hafıza" : "Geçmiş sohbetler"}</h3>
-              <button onClick={() => setPanel(null)} className="text-xs text-muted hover:text-ink">
+              <h3 className="flex-1 font-serif text-base">
+                {panel === "memory" ? "Hafıza" : "Geçmiş sohbetler"}
+              </h3>
+              <button
+                onClick={() => setPanel(null)}
+                className="text-xs text-muted hover:text-ink"
+              >
                 ← Sohbete dön <Kbd>Esc</Kbd>
               </button>
             </div>
@@ -485,8 +627,9 @@ function ChatWindow({
           {!panel && messages.length === 0 && (
             <div className="py-8 text-sm leading-relaxed text-muted">
               <p>
-                PDF&apos;te bir bölüm seç ve <Kbd>Ctrl K</Kbd> ile buraya ekle; o bölüm hakkında
-                istediğini sor. Seçim yapmadan da sorabilirsin; açık sayfa ve bölüm otomatik eklenir.
+                PDF&apos;te bir bölüm seç ve <Kbd>Ctrl K</Kbd> ile buraya ekle;
+                o bölüm hakkında istediğini sor. Seçim yapmadan da sorabilirsin;
+                açık sayfa ve bölüm otomatik eklenir.
               </p>
               <ul className="mt-3 space-y-1 font-serif text-[15px] text-ink/80">
                 <li>“Bu cümleyi daha sade anlatır mısın?”</li>
@@ -494,30 +637,39 @@ function ChatWindow({
                 <li>“Bahsedilen kişi kim, ne zaman yaşamış?”</li>
               </ul>
               <p className="mt-4">
-                Hazır komutlar: <Kbd>/ozet</Kbd> tüm PDF&apos;i özetler (<Kbd>/ozet 10-25</Kbd> yalnızca
-                o sayfaları), <Kbd>/sayfa</Kbd> açık sayfayı özetler, <Kbd>/test</Kbd> tüm PDF&apos;ten
-                çoktan seçmeli test hazırlar (<Kbd>/test 10-25</Kbd> yalnızca o sayfalardan). “15 soruluk test
-                hazırla”, “bu sayfadan test yap” gibi yazarak da isteyebilirsin.
+                Hazır komutlar: <Kbd>/ozet</Kbd> tüm PDF&apos;i özetler (
+                <Kbd>/ozet 10-25</Kbd> yalnızca o sayfaları), <Kbd>/sayfa</Kbd>{" "}
+                açık sayfayı özetler, <Kbd>/test</Kbd> tüm PDF&apos;ten çoktan
+                seçmeli test hazırlar (<Kbd>/test 10-25</Kbd> yalnızca o
+                sayfalardan). “15 soruluk test hazırla”, “bu sayfadan test yap”
+                gibi yazarak da isteyebilirsin.
               </p>
               <p className="mt-4">
-                Ekran görüntüsü de ekleyebilirsin: <Kbd>Ctrl V</Kbd> ile yapıştır ya da buraya sürükle.
-                İçindeki yazıyı okur, çevirir, açıklar.
+                Ekran görüntüsü de ekleyebilirsin: <Kbd>Ctrl V</Kbd> ile
+                yapıştır ya da buraya sürükle. İçindeki yazıyı okur, çevirir,
+                açıklar.
               </p>
             </div>
           )}
 
-          <div className={`space-y-6 ${panel ? "hidden" : ""}`}>
+          <div className={`flex-col gap-6 ${panel ? "hidden" : "flex"}`}>
             {messages.map((m, i) => (
               <Message
                 key={m.id}
                 message={m}
                 index={i}
                 // Cevap bitmeden nota alınmasın
-                onToggleNote={book && !(busy && i === messages.length - 1) ? toggleNote : undefined}
+                onToggleNote={
+                  book && !(busy && i === messages.length - 1)
+                    ? toggleNote
+                    : undefined
+                }
                 saved={chatNotes.some((n) => n.messageId === m.id)}
                 // Öneriler yalnızca son cevabın altında, cevap bitince
                 onSuggest={i === messages.length - 1 && !busy ? ask : undefined}
                 streaming={busy && i === messages.length - 1}
+                onResend={busy ? undefined : resend}
+                fileName={fileName}
                 onGoTo={onGoTo}
               />
             ))}
@@ -527,21 +679,37 @@ function ChatWindow({
                 PDF okunuyor… {reading.done}/{reading.total} sayfa
               </p>
             )}
-            {preparing && !profile && <p className="animate-pulse font-mono text-xs text-muted">kitap tanınıyor…</p>}
+            {preparing && !profile && (
+              <p className="animate-pulse font-mono text-xs text-muted">
+                kitap tanınıyor…
+              </p>
+            )}
             {status === "submitted" && (
               <p className="animate-pulse font-mono text-xs text-muted">
                 {messages.at(-1)?.metadata?.skill?.name === "test"
                   ? "test hazırlanıyor…"
-                  : (messages.at(-1)?.metadata?.skill?.pages.length ?? 0) > 1
-                    ? "özetleniyor… (uzun belgelerde birkaç dakika sürebilir)"
-                    : "düşünüyor…"}
+                  : messages.at(-1)?.metadata?.skill?.name === "kelime"
+                    ? "kelimeler aranıyor…"
+                    : (messages.at(-1)?.metadata?.skill?.pages.length ?? 0) > 1
+                      ? "özetleniyor… (uzun belgelerde birkaç dakika sürebilir)"
+                      : "düşünüyor…"}
               </p>
             )}
             {notice && <p className="text-sm text-accent">{notice}</p>}
             {error && (
               <div className="text-sm text-accent">
                 Cevap alınamadı: {error.message}{" "}
-                <button onClick={async () => regenerate({ body: { ...memoryBody(), ...(await bookBody().catch(() => ({}))) } })} className="underline underline-offset-2">
+                <button
+                  onClick={async () =>
+                    regenerate({
+                      body: {
+                        ...memoryBody(),
+                        ...(await bookBody().catch(() => ({}))),
+                      },
+                    })
+                  }
+                  className="underline underline-offset-2"
+                >
                   Tekrar dene
                 </button>
               </div>
@@ -551,7 +719,9 @@ function ChatWindow({
       </div>
 
       {/* Hafıza / geçmiş açıkken soru alanı gizlenir; yazılan taslak kaybolmasın diye bağlı kalır */}
-      <div className={`border-t border-rule px-6 pt-3 pb-3 ${panel ? "hidden" : ""}`}>
+      <div
+        className={`border-t border-rule px-6 pt-3 pb-3 ${panel ? "hidden" : ""}`}
+      >
         <div className="mx-auto max-w-[70ch]">
           {reference ? (
             <div className="mb-2 flex items-start gap-2">
@@ -569,7 +739,8 @@ function ChatWindow({
           ) : (
             messages.length === 0 && (
               <p className="mb-2 text-xs text-muted">
-                Referans yok. PDF&apos;te seçip <Kbd>Ctrl K</Kbd> ile ekleyebilirsin.
+                Referans yok. PDF&apos;te seçip <Kbd>Ctrl K</Kbd> ile
+                ekleyebilirsin.
               </p>
             )
           )}
@@ -578,9 +749,15 @@ function ChatWindow({
               {images.map((img, i) => (
                 <div key={i} className="group relative">
                   {/* eslint-disable-next-line @next/next/no-img-element -- yerel data URL */}
-                  <img src={img.url} alt={img.filename ?? ""} className="h-16 max-w-32 border border-rule object-cover" />
+                  <img
+                    src={img.url}
+                    alt={img.filename ?? ""}
+                    className="h-16 max-w-32 border border-rule object-cover"
+                  />
                   <button
-                    onClick={() => setImages((prev) => prev.filter((_, j) => j !== i))}
+                    onClick={() =>
+                      setImages((prev) => prev.filter((_, j) => j !== i))
+                    }
                     aria-label="Görseli kaldır"
                     className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center bg-ink text-[10px] leading-none text-sheet opacity-0 transition-opacity group-hover:opacity-100"
                   >
@@ -614,7 +791,11 @@ function ChatWindow({
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                if (
+                  e.key === "Enter" &&
+                  !e.shiftKey &&
+                  !e.nativeEvent.isComposing
+                ) {
                   e.preventDefault();
                   submit();
                 }
@@ -649,13 +830,17 @@ function ChatWindow({
               Görsel ekle
             </button>
             {busy && (
-              <button onClick={stopAll} className="pb-1 text-xs text-muted hover:text-accent">
+              <button
+                onClick={stopAll}
+                className="pb-1 text-xs text-muted hover:text-accent"
+              >
                 Durdur
               </button>
             )}
           </div>
           <p className="mt-1.5 font-mono text-[11px] text-muted">
-            enter gönder, shift+enter yeni satır, / komutlar, esc {busy ? "durdur" : "kapat"}
+            enter gönder, shift+enter yeni satır, / komutlar, esc{" "}
+            {busy ? "durdur" : "kapat"}
           </p>
         </div>
       </div>
@@ -678,6 +863,8 @@ const Message = memo(function Message({
   onToggleNote,
   saved,
   streaming,
+  onResend,
+  fileName,
   onGoTo,
 }: {
   message: ChatMessage;
@@ -687,35 +874,70 @@ const Message = memo(function Message({
   saved: boolean;
   /** Cevap hâlâ yazılıyor */
   streaming: boolean;
+  /** Soruyu yeniden sorar; metin verilirse soru önce onunla değiştirilir */
+  onResend?: (id: string, text?: string) => void;
+  fileName: string | null;
   onGoTo?: (page: number) => void;
 }) {
   const text = textOf(m);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const [draft, setDraft] = useState<string | null>(null);
   if (m.role !== "user") {
     const { body, suggestions } = splitSuggestions(text);
-    const searching = streaming && m.parts.some((p) => isWebSearchPart(p) && !("output" in p && p.output));
+    const searching =
+      streaming &&
+      m.parts.some((p) => isWebSearchPart(p) && !("output" in p && p.output));
     const sources = [
       ...new Map(
-        m.parts.flatMap((p) => (p.type === "source-url" ? [[p.url, p] as const] : [])),
+        m.parts.flatMap((p) =>
+          p.type === "source-url" ? [[p.url, p] as const] : [],
+        ),
       ).values(),
     ];
     return (
       <div>
-        {searching && <p className="mb-2 animate-pulse font-mono text-xs text-muted">web&apos;de aranıyor…</p>}
+        <p className="mt-1.5 mb-1.5 text-[11px] tracking-[0.12em] text-accent uppercase">
+          Cevap
+        </p>
+        {searching && (
+          <p className="mb-2 animate-pulse font-mono text-xs text-muted">
+            web&apos;de aranıyor…
+          </p>
+        )}
         {body && (
-          <div ref={bodyRef} className="chat-md font-serif text-[17px] leading-[1.75]">
+          <div
+            ref={bodyRef}
+            className="chat-md font-serif text-[17px] leading-[1.75]"
+          >
             <ReactMarkdown>{body}</ReactMarkdown>
           </div>
         )}
-        {/* Generative UI: model createQuiz aracını çağırdıysa test kartı çizilir */}
+        {/* Generative UI: model createQuiz aracını çağırdıysa test kartı, proposeWords çağırdıysa kelime önizlemesi çizilir */}
         {m.parts.map((p) =>
           p.type === "tool-createQuiz" ? (
             <div key={p.toolCallId} className={body ? "mt-3" : ""}>
               <Quiz
                 id={p.toolCallId}
                 input={p.input}
-                ready={p.state === "input-available" || p.state === "output-available"}
+                ready={
+                  p.state === "input-available" ||
+                  p.state === "output-available"
+                }
                 error={p.state === "output-error" ? p.errorText : undefined}
+                onGoTo={onGoTo}
+              />
+            </div>
+          ) : p.type === "tool-proposeWords" ? (
+            // Kelime önerisi: kullanıcı önizlemede seçip onaylayınca eklenir
+            <div key={p.toolCallId} className={body ? "mt-3" : ""}>
+              <WordProposal
+                input={p.input}
+                ready={
+                  p.state === "input-available" ||
+                  p.state === "output-available"
+                }
+                error={p.state === "output-error" ? p.errorText : undefined}
+                fileName={fileName}
                 onGoTo={onGoTo}
               />
             </div>
@@ -729,7 +951,11 @@ const Message = memo(function Message({
             {onToggleNote && (
               <button
                 onClick={() => onToggleNote(index)}
-                title={saved ? "Notlardan çıkar" : "Bu cevabı kelime panelindeki Notlar'a ekle"}
+                title={
+                  saved
+                    ? "Notlardan çıkar"
+                    : "Bu cevabı kelime panelindeki Notlar'a ekle"
+                }
                 className={`transition-colors ${saved ? "text-accent hover:text-ink" : "text-muted hover:text-ink"}`}
               >
                 {saved ? "✓ Notlarda" : "+ Nota ekle"}
@@ -755,15 +981,100 @@ const Message = memo(function Message({
       </div>
     );
   }
-  // Soru zeminli bir blokta; önceki cevaptan çizgiyle ayrılır ki konuşmalar birbirine karışmasın
+  const images = m.parts.filter((p) => p.type === "file");
+  const saveEdit = () => {
+    const next = draft?.trim() ?? "";
+    if (!onResend || (!next && !images.length)) return;
+    setDraft(null);
+    onResend(m.id, next);
+  };
+  // Her soru-cevap çifti ince bir çizgiyle ayrılır. Soru kâğıt zeminli, solda koyu şeritli bir
+  // blokta düz yazıyla; cevap altında sayfa zemininde serif metinle akar. İkisi de küçük etiketli.
   return (
-    <div className={index > 0 ? "border-t border-rule pt-6" : ""}>
-      <div className="space-y-2 bg-paper px-4 py-3">
-        {m.metadata?.reference && <ReferenceQuote reference={m.metadata.reference} />}
-        {m.metadata?.skill && <SkillNote skill={m.metadata.skill} />}
-        <MessageImages images={m.parts.filter((p) => p.type === "file")} />
-        {text && <p className="whitespace-pre-wrap leading-relaxed">{text}</p>}
+    <div className={`group ${index > 0 ? "border-t border-rule pt-8" : ""}`}>
+      <div className="border-l-[3px] border-ink bg-paper px-4 pt-2 pb-3">
+        <div className="mb-1.5 flex h-5 items-baseline gap-4 text-xs">
+          <span className="flex-1 text-[11px] tracking-[0.12em] text-muted uppercase">
+            Soru
+          </span>
+          {draft === null && onResend && (
+            <span className="flex gap-4 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+              {/* Komutla başlatılan özet/test isteğinde metin komutun kendisi; yalnızca yeniden sorulur */}
+              {!m.metadata?.skill && (
+                <button
+                  onClick={() => setDraft(text)}
+                  title="Soruyu düzenleyip yeniden gönder"
+                  className="text-muted hover:text-ink"
+                >
+                  Düzenle
+                </button>
+              )}
+              <button
+                onClick={() => onResend(m.id)}
+                title="Aynı soruyu yeniden sor (sonraki cevaplar silinir)"
+                className="text-muted hover:text-ink"
+              >
+                Yeniden sor
+              </button>
+            </span>
+          )}
+        </div>
+        <div className="space-y-2">
+          {m.metadata?.reference && (
+            <ReferenceQuote reference={m.metadata.reference} />
+          )}
+          {m.metadata?.skill && <SkillNote skill={m.metadata.skill} />}
+          <MessageImages images={images} />
+          {draft !== null ? (
+            <textarea
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onFocus={(e) =>
+                e.currentTarget.setSelectionRange(draft.length, draft.length)
+              }
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.stopPropagation();
+                  setDraft(null);
+                } else if (
+                  e.key === "Enter" &&
+                  !e.shiftKey &&
+                  !e.nativeEvent.isComposing
+                ) {
+                  e.preventDefault();
+                  saveEdit();
+                }
+              }}
+              rows={Math.min(8, Math.max(2, draft.split("\n").length))}
+              className="w-full resize-none border border-rule bg-sheet px-2 py-1 text-[15px] font-medium leading-relaxed outline-none focus:border-muted"
+            />
+          ) : (
+            text && (
+              <p className="whitespace-pre-wrap text-[15px] font-medium leading-relaxed">
+                {text}
+              </p>
+            )
+          )}
+        </div>
       </div>
+      {draft !== null && (
+        <div className="mt-2 flex justify-end gap-4 text-xs">
+          <button
+            onClick={() => setDraft(null)}
+            className="text-muted hover:text-ink"
+          >
+            Vazgeç <Kbd>Esc</Kbd>
+          </button>
+          <button
+            onClick={saveEdit}
+            disabled={!onResend}
+            className="text-ink hover:text-accent disabled:opacity-40"
+          >
+            Gönder <Kbd>Enter</Kbd>
+          </button>
+        </div>
+      )}
     </div>
   );
 });
@@ -789,7 +1100,13 @@ function plainText(markdown: string) {
  * Cevabı panoya kopyalar: düz metin alanlarına işaretsiz metin, Word/Docs gibi editörlere
  * biçimiyle (kalın, liste…) yapışır.
  */
-function CopyButton({ markdown, htmlRef }: { markdown: string; htmlRef: React.RefObject<HTMLDivElement | null> }) {
+function CopyButton({
+  markdown,
+  htmlRef,
+}: {
+  markdown: string;
+  htmlRef: React.RefObject<HTMLDivElement | null>;
+}) {
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
@@ -813,7 +1130,11 @@ function CopyButton({ markdown, htmlRef }: { markdown: string; htmlRef: React.Re
   };
 
   return (
-    <button onClick={copy} title="Cevabı kopyala" className="text-muted transition-colors hover:text-ink">
+    <button
+      onClick={copy}
+      title="Cevabı kopyala"
+      className="text-muted transition-colors hover:text-ink"
+    >
       {copied ? "✓ Kopyalandı" : "Kopyala"}
     </button>
   );
@@ -831,15 +1152,35 @@ function History({
   onDelete: (id: string) => void;
 }) {
   const date = (t: number) =>
-    t ? new Date(t).toLocaleString("tr-TR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
+    t
+      ? new Date(t).toLocaleString("tr-TR", {
+          day: "numeric",
+          month: "short",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : "";
   return (
     <ul className="divide-y divide-rule">
       {sessions.map((s) => (
         <li key={s.id} className="group flex items-baseline gap-3 py-2">
-          <button onClick={() => onOpen(s.id)} className="min-w-0 flex-1 text-left">
-            <span className={`block truncate ${s.id === current ? "text-accent" : "hover:text-accent"}`}>{s.title}</span>
+          <button
+            onClick={() => onOpen(s.id)}
+            className="min-w-0 flex-1 text-left"
+          >
+            <span
+              className={`block truncate ${s.id === current ? "text-accent" : "hover:text-accent"}`}
+            >
+              {s.title}
+            </span>
             <span className="font-mono text-[11px] text-muted">
-              {[date(s.updatedAt), `${s.messages.length} mesaj`, s.id === current && "açık"].filter(Boolean).join(" · ")}
+              {[
+                date(s.updatedAt),
+                `${s.messages.length} mesaj`,
+                s.id === current && "açık",
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             </span>
           </button>
           <button
@@ -856,7 +1197,11 @@ function History({
 
 /** Cevapta modelin yaptığı hafıza değişiklikleri (araç sunucuda çalıştıysa). */
 function memoryChangesOf(m: ChatMessage): MemoryChange[] {
-  return m.parts.flatMap((p) => (p.type === "tool-updateMemory" && p.state === "output-available" ? p.output.applied : []));
+  return m.parts.flatMap((p) =>
+    p.type === "tool-updateMemory" && p.state === "output-available"
+      ? p.output.applied
+      : [],
+  );
 }
 
 /** Cevabın altında: "Hafızaya eklendi: … · Geri al". */
@@ -864,18 +1209,26 @@ function MemoryNote({ changes }: { changes: MemoryChange[] }) {
   const items = useMemory();
   if (!changes.length) return null;
   const active = changes.some((c) => isChangeActive(items, c));
-  const label = { add: "Hafızaya eklendi", remove: "Hafızadan silindi", update: "Hafıza güncellendi" };
+  const label = {
+    add: "Hafızaya eklendi",
+    remove: "Hafızadan silindi",
+    update: "Hafıza güncellendi",
+  };
   return (
     <div className="mt-2 flex items-baseline gap-3 text-xs text-muted">
       <ul className="min-w-0 flex-1 space-y-0.5">
         {changes.map((c, i) => (
           <li key={i} className={active ? "" : "line-through opacity-60"}>
-            🧠 {label[c.action]}: “{c.action === "remove" ? c.previous : c.text}”
+            🧠 {label[c.action]}: “{c.action === "remove" ? c.previous : c.text}
+            ”
           </li>
         ))}
       </ul>
       {active ? (
-        <button onClick={() => revertChanges(changes)} className="shrink-0 underline underline-offset-2 hover:text-ink">
+        <button
+          onClick={() => revertChanges(changes)}
+          className="shrink-0 underline underline-offset-2 hover:text-ink"
+        >
           Geri al
         </button>
       ) : (
@@ -888,7 +1241,9 @@ function MemoryNote({ changes }: { changes: MemoryChange[] }) {
 function MemoryPanel({ items }: { items: { id: string; text: string }[] }) {
   const enabled = useMemoryEnabled();
   const [draft, setDraft] = useState("");
-  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
+  const [editing, setEditing] = useState<{ id: string; text: string } | null>(
+    null,
+  );
   const full = items.length >= MEMORY_MAX_ITEMS;
   const add = () => {
     addMemory(draft);
@@ -902,11 +1257,16 @@ function MemoryPanel({ items }: { items: { id: string; text: string }[] }) {
     <div className="text-sm">
       <div className="mb-3 flex items-baseline gap-3">
         <p className="flex-1 text-xs leading-relaxed text-muted">
-          Sana dair hatırladıkları; tüm kitaplarda her soruya eklenir. Sohbette öğrendiklerini kendisi
-          ekler, “bunu hatırla” / “bunu unut” da diyebilirsin.
+          Sana dair hatırladıkları; tüm kitaplarda her soruya eklenir. Sohbette
+          öğrendiklerini kendisi ekler, “bunu hatırla” / “bunu unut” da
+          diyebilirsin.
         </p>
         <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs text-muted">
-          <input type="checkbox" checked={enabled} onChange={(e) => setMemoryEnabled(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => setMemoryEnabled(e.target.checked)}
+          />
           Hafızayı kullan
         </label>
       </div>
@@ -947,7 +1307,11 @@ function MemoryPanel({ items }: { items: { id: string; text: string }[] }) {
           </li>
         ))}
       </ul>
-      {!items.length && <p className="py-2 font-serif text-muted">Henüz bir şey hatırlamıyor.</p>}
+      {!items.length && (
+        <p className="py-2 font-serif text-muted">
+          Henüz bir şey hatırlamıyor.
+        </p>
+      )}
       <div className="mt-3 flex items-baseline gap-2">
         <span className="font-mono text-muted select-none">+</span>
         <input
@@ -956,7 +1320,11 @@ function MemoryPanel({ items }: { items: { id: string; text: string }[] }) {
           disabled={full}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
-          placeholder={full ? `Hafıza dolu (${MEMORY_MAX_ITEMS} madde)` : "Ekle: ör. “KPSS'ye hazırlanıyorum, cevaplar kısa olsun”"}
+          placeholder={
+            full
+              ? `Hafıza dolu (${MEMORY_MAX_ITEMS} madde)`
+              : "Ekle: ör. “KPSS'ye hazırlanıyorum, cevaplar kısa olsun”"
+          }
           className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted"
         />
         <span className="font-mono text-[11px] text-muted">
@@ -1001,7 +1369,11 @@ function MessageImages({ images }: { images: FileUIPart[] }) {
   return (
     <div className="flex flex-wrap gap-2 pl-4">
       {images.map((img, i) => (
-        <button key={i} onClick={() => setOpen(open === i ? null : i)} className="block">
+        <button
+          key={i}
+          onClick={() => setOpen(open === i ? null : i)}
+          className="block"
+        >
           {/* eslint-disable-next-line @next/next/no-img-element -- yerel data URL */}
           <img
             src={img.url}
@@ -1034,14 +1406,17 @@ function SkillNote({ skill }: { skill: SkillRequest }) {
   return (
     <p className="border-l-2 border-accent/60 pl-3 text-[11px] text-muted">
       {skillLabel(skill)}
-      {skill.emptyPages.length > 0 && ` · ${skill.emptyPages.length} sayfada metin yok (taranmış, OCR yapılmamış)`}
+      {skill.emptyPages.length > 0 &&
+        ` · ${skill.emptyPages.length} sayfada metin yok (taranmış, OCR yapılmamış)`}
     </p>
   );
 }
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="border border-rule px-1 py-px font-mono text-[11px] text-muted">{children}</kbd>
+    <kbd className="border border-rule px-1 py-px font-mono text-[11px] text-muted">
+      {children}
+    </kbd>
   );
 }
 

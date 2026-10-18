@@ -11,4 +11,6 @@ export type SavedWord = Translation & {
   page: number | null;
   fileName: string | null;
   createdAt: number;
+  /** Sohbetten eklenen kelimelerde eş anlamlılar */
+  synonyms?: string[];
 };

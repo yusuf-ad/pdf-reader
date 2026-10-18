@@ -8,6 +8,7 @@ import {
 } from "@/lib/book-context";
 import { formatMemory, memoryTools, sanitizeMemory } from "@/lib/memory";
 import { quizTools } from "@/lib/quiz";
+import { wordTools } from "@/lib/words";
 import {
   formatReference,
   splitSuggestions,
@@ -45,6 +46,7 @@ const SYSTEM = `Sen bir okuma asistanısın. Kullanıcı bir kitap/PDF okuyor ve
 - Kullanıcının kitapta işaretlediği yerler <isaretler> içinde gelir: sayfa, renk, işaretin altındaki yazı ve geçtiği yer (işaretli satırdan başlayan metin). "İşaretlediğim", "sarıyla işaretli", "yanlış yaptığım sorular" gibi ifadeleri buna göre yorumla; ör. soru numarası işaretliyse o soru, geçtiği yerde başlayan sorudur. Rengin anlamını kullanıcı söylemediyse varsayma. Geçtiği yer kesik olabilir; eksik kısmı uydurma.
 - Kullanıcı görsel (genelde ekran görüntüsü) ekleyebilir. Görseldeki yazıyı dikkatle oku. Soru yoksa: yazıyı aynen aktar, Türkçe çevirisini ver ve kısaca açıkla. Okuyamadığın kısımları uydurma, okunamadığını söyle.
 - Kullanıcı test, quiz ya da soru çözmek isterse createQuiz aracını çağır; soruları okuduğu kitabın verilen metnine (<belge>, <sayfa_metni>, <acik_sayfa>, <secili_metin>) dayandır, soruları ayrıca metin olarak yazma. Kaç soru istediğini söylemediyse 5 soru hazırla. Metin yoksa ya da yetersizse test uydurma, bunu söyle.
+- Kullanıcı kelime/ifadeleri kelime listesine eklemek isterse proposeWords aracını çağır; kelimeleri verilen metne dayandır, geçtiği cümleyi metinden aynen al. Araç hiçbir şeyi kendisi eklemez: öneriler kullanıcıya önizleme olarak gösterilir, kullanıcı seçip onaylar. Listeyi ayrıca metin olarak yazma.
 - Kullanıcı hakkında kalıcı bilgiler <hafiza> içinde gelir (varsa). Cevaplarını bunlara göre kişiselleştir (seviye, hedef, tercih edilen uzunluk ve tarz); hafızayı her cevapta anma, yalnızca işe yaradığında kullan. Sonraki sohbetlerde de işe yarayacak yeni bir bilgi öğrenirsen ya da kullanıcı "hatırla"/"unut" derse updateMemory aracını çağır, sonra cevabına devam et.
 - Her cevabın en sonuna, kullanıcının bir sonraki adımda sorabileceği 3 kısa takip sorusu ekle. Sorular bu cevaba ve kitaba özgü olsun, kullanıcının ağzından yazılsın, her biri en fazla 12 kelime. Tam olarak şu biçimde ve cevabın en sonunda:
 ${SUGGESTIONS_OPEN}
@@ -118,8 +120,8 @@ export async function POST(req: Request) {
     }),
   );
 
-  // /test komutunda model mutlaka test aracını çağırır
-  const quiz = messages[last]?.metadata?.skill?.name === "test";
+  // Test isteğinde model mutlaka test aracını, kelime isteğinde öneri aracını çağırır
+  const skillName = messages[last]?.metadata?.skill?.name;
   const system = [SYSTEM, memory && formatMemory(memory), book && bookBlock(book, messages[last])]
     .filter(Boolean)
     .join("\n\n");
@@ -129,12 +131,18 @@ export async function POST(req: Request) {
     messages: await convertToModelMessages(withReferences),
     tools: {
       ...quizTools,
+      ...wordTools,
       ...(memory ? memoryTools(memory) : {}),
       web_search: openai.tools.webSearch({ searchContextSize: "medium" }),
     },
-    toolChoice: quiz ? { type: "tool", toolName: "createQuiz" } : "auto",
-    // Hafıza kaydından sonra model cevabına devam eder; test oluşunca durur (test cevabın kendisi)
-    stopWhen: [isStepCount(3), hasToolCall("createQuiz")],
+    toolChoice:
+      skillName === "test"
+        ? { type: "tool", toolName: "createQuiz" }
+        : skillName === "kelime"
+          ? { type: "tool", toolName: "proposeWords" }
+          : "auto",
+    // Hafıza kaydından sonra model cevabına devam eder; test ya da kelime önerisi gelince durur (cevabın kendisi)
+    stopWhen: [isStepCount(3), hasToolCall("createQuiz"), hasToolCall("proposeWords")],
     abortSignal: req.signal,
   });
 
@@ -161,6 +169,14 @@ function bookBlock(book: BookContext, lastMessage: ChatMessage | undefined) {
   return formatBookContext(safe, free);
 }
 
+const CHUNK_SYSTEM =
+  "Bir kitabın/belgenin bir parçasını özetliyorsun; bu özetler sonra birleştirilip tüm belgenin özeti çıkarılacak. Türkçe, madde madde yaz. Bölüm başlıklarını, önemli kişi, olay, kavram ve argümanları koru; ilgili sayfa numaralarını belirt. Metinde olmayanı ekleme.";
+
+/** Kelime aramasında parçalar özetlenmez; isteğe uyan kelimeler cümleleriyle aynen çıkarılır. */
+const wordsChunkSystem = (request = "") =>
+  `Bir belgenin bir parçasındasın; bulduklarından sonra kelime listesi hazırlanacak. Kullanıcının isteği: "${request.slice(0, 500)}"
+Bu parçada isteğe uyan kelime/ifadeleri bul. Her biri için bir satır yaz: kelime | geçtiği cümle (metinden aynen) | sayfa ([s. N] işaretinden). Aynı kelimeyi bir kez yaz. Hiç yoksa yalnızca "yok" yaz. Metinde olmayanı ekleme.`;
+
 /** Kısa belgeyi doğrudan, uzun belgeyi önce parça parça özetleyip gönderir. */
 async function buildSkillPrompt(
   skill: SkillRequest,
@@ -183,8 +199,7 @@ async function buildSkillPrompt(
       const { text } = await generateText({
         model,
         abortSignal: signal,
-        system:
-          "Bir kitabın/belgenin bir parçasını özetliyorsun; bu özetler sonra birleştirilip tüm belgenin özeti çıkarılacak. Türkçe, madde madde yaz. Bölüm başlıklarını, önemli kişi, olay, kavram ve argümanları koru; ilgili sayfa numaralarını belirt. Metinde olmayanı ekleme.",
+        system: skill.name === "kelime" ? wordsChunkSystem(skill.request) : CHUNK_SYSTEM,
         prompt: formatPages(pages),
       });
       summaries[i] = `## ${range}\n${text}`;

@@ -17,16 +17,24 @@ const KEY = "memory";
 // Kapalıyken hafıza modele gönderilmez, model de kaydedemez
 const OFF_KEY = "memory-off";
 
-const EMPTY: MemoryItem[] = [];
+// Hiç kaydedilmemişse başlangıç hafızası. Kullanıcı hepsini silerse boş liste saklanır,
+// varsayılanlar geri gelmez.
+const DEFAULT_MEMORY: MemoryItem[] = [
+  { id: "def-kisa", text: "Kısa cevap istiyor; uzun açıklamayı ancak isterse" },
+  { id: "def-ozet", text: "Önce bir cümlelik özet, sonra detay görmek istiyor" },
+  { id: "def-kod", text: "Kod örneklerinde TypeScript tercih ediyor" },
+  { id: "def-kelime", text: "Kelime sorularında Türkçe anlam, eş anlamlı ve bir örnek cümle istiyor" },
+  { id: "def-quiz", text: "Quizlerde şıkların neden yanlış olduğunu da görmek istiyor" },
+];
 
-const load = () => get<MemoryItem[]>(KEY) ?? EMPTY;
+const load = () => get<MemoryItem[]>(KEY) ?? DEFAULT_MEMORY;
 
 function write(items: MemoryItem[]) {
-  set(KEY, items.length ? items : undefined);
+  set(KEY, items);
 }
 
 export function useMemory() {
-  return useStored(KEY, EMPTY);
+  return useStored(KEY, DEFAULT_MEMORY);
 }
 
 export function useMemoryEnabled() {

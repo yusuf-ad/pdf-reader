@@ -45,18 +45,19 @@ export default function WordList({
     const q = query.trim().toLocaleLowerCase("tr");
     if (!q) return words;
     return words.filter((w) =>
-      [w.word, w.wordTranslation, w.sentence].some((s) => s.toLocaleLowerCase("tr").includes(q)),
+      [w.word, w.wordTranslation, w.sentence, ...(w.synonyms ?? [])].some((s) => s.toLocaleLowerCase("tr").includes(q)),
     );
   }, [words, query]);
 
   const exportCsv = () => {
     const esc = (s: string | number | null) => `"${String(s ?? "").replace(/"/g, '""')}"`;
     const rows = [
-      ["Kelime", "Türkçe", "Tür", "Cümle", "Cümle (TR)", "Sayfa", "Dosya", "Tarih"],
+      ["Kelime", "Türkçe", "Tür", "Eş anlamlılar", "Cümle", "Cümle (TR)", "Sayfa", "Dosya", "Tarih"],
       ...words.map((w) => [
         w.word,
         w.wordTranslation,
         w.partOfSpeech,
+        (w.synonyms ?? []).join(", "),
         w.sentence,
         w.sentenceTranslation,
         w.page,
@@ -169,6 +170,11 @@ export default function WordList({
                 </button>
               </div>
               <p className="font-serif text-accent">{w.wordTranslation}</p>
+              {w.synonyms?.length ? (
+                <p className="mt-0.5 text-sm text-muted">
+                  <span title="Eş anlamlılar">≈</span> {w.synonyms.join(", ")}
+                </p>
+              ) : null}
               {w.sentence && (
                 <div className="mt-2 space-y-1 font-serif text-[15px] leading-relaxed">
                   <p className="text-muted">
