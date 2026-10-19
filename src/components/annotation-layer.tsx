@@ -331,7 +331,7 @@ function NoteView({
       style={{
         left: note.x * w + (offset?.dx ?? 0),
         top: note.y * h + (offset?.dy ?? 0),
-        maxWidth: Math.max(80, (1 - note.x) * w - 8),
+        maxWidth: note.width ? note.width * w : Math.max(80, (1 - note.x) * w - 8),
         fontSize: note.size * w,
         color: note.color,
         pointerEvents: interactive || editing ? "auto" : "none",

@@ -30,6 +30,8 @@ export type Note = {
   y: number;
   size: number;
   text: string;
+  /** En fazla genişlik (sayfaya oranla); yoksa sayfanın sağ kenarına kadar */
+  width?: number;
 };
 
 /** Fosforlu kalemle vurgulanan metin; her satır bir dikdörtgen. */

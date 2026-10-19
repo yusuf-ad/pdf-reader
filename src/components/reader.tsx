@@ -26,6 +26,7 @@ import {
 } from "@/lib/annotations";
 import type { Reference } from "@/lib/chat";
 import { deleteBookOcr, setOcrEnabled, useOcrEnabled } from "@/lib/ocr";
+import type { MarkInput } from "@/lib/page-marks";
 import { getPageText, usePdfSearch } from "@/lib/pdf-search";
 import { cropPage, type NewQuestion } from "@/lib/questions";
 import { loadProgress, saveProgress, toggleBookmark, useBookmarks } from "@/lib/reading-state";
@@ -34,6 +35,7 @@ import { deleteBook as deleteBookData, requestPersistence } from "@/lib/storage"
 import { makeTextRenderer } from "@/lib/text-highlight";
 import type { SavedWord, Translation } from "@/lib/types";
 import { useSavedWords } from "@/lib/use-saved-words";
+import { AiMarkerStatus, useAiMarker } from "./ai-marker";
 import ChatModal from "./chat-modal";
 import type { CropRegion } from "./crop-layer";
 import LeftPanel, { type LeftTab } from "./left-panel";
@@ -454,6 +456,17 @@ export default function Reader() {
       goTo(page);
     },
     [goTo],
+  );
+
+  // Asistan yanlış soruları işaretlerken sohbet küçülür; imleç sayfada görünsün
+  const marker = useAiMarker(pdf, key, scrollRef, goTo);
+  const runMarker = marker.run;
+  const markQuestions = useCallback(
+    (id: string, input: MarkInput) => {
+      setChatOpen(false);
+      runMarker(id, input);
+    },
+    [runMarker],
   );
 
   /** Kelime listesindeki kelimeyi, geçtiği cümleyle sohbete ekleyip sohbeti açar. */
@@ -1088,6 +1101,13 @@ export default function Reader() {
         pendingImage={chatImage}
         onImageTaken={takeChatImage}
         onGoTo={goToFromChat}
+        onMarkQuestions={markQuestions}
+      />
+      <AiMarkerStatus
+        status={marker.status}
+        book={key}
+        onStop={marker.stop}
+        onDismiss={marker.dismiss}
       />
       {questionDraft && (
         <QuestionDialog

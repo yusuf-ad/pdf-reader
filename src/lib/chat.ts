@@ -1,5 +1,6 @@
 import type { UIDataTypes, UIMessage } from "ai";
 import type { MemoryTools } from "./memory";
+import type { MarkTools } from "./page-marks";
 import type { QuizTools } from "./quiz";
 import type { SkillRequest } from "./skills";
 import type { WordTools } from "./words";
@@ -15,7 +16,12 @@ export type Reference = {
   pageText?: string;
 };
 
-export type ChatMessage = UIMessage<{ reference?: Reference; skill?: SkillRequest }, UIDataTypes, QuizTools & MemoryTools & WordTools>;
+export type ChatMessage = UIMessage<{
+  reference?: Reference;
+  skill?: SkillRequest;
+  /** Soru sorulurken bağlama eklenen açık sayfa (chip kaldırıldıysa yok) */
+  page?: number;
+}, UIDataTypes, QuizTools & MemoryTools & WordTools & MarkTools>;
 
 export function formatReference(ref: Reference) {
   const where = [ref.fileName, ref.page && `sayfa ${ref.page}`].filter(Boolean).join(", ");

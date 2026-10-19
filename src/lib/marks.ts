@@ -9,8 +9,8 @@ import { loadOcr } from "./ocr";
 // Kalem çizgisi yalnızca koordinattır; altındaki yazı sayfanın metin konumlarından çıkarılır.
 
 /** Sayfadaki bir metin parçası: düz metindeki yeri ve sayfadaki kutusu (0–1). */
-type Piece = { start: number; text: string; x0: number; y0: number; x1: number; y1: number };
-type PageLayout = { text: string; pieces: Piece[] };
+export type Piece = { start: number; text: string; x0: number; y0: number; x1: number; y1: number };
+export type PageLayout = { text: string; pieces: Piece[] };
 
 // İşaretin ardından modele gönderilen metin (soru kökü ve şıklar sığsın diye)
 const CONTEXT_CHARS = 600;
@@ -67,7 +67,8 @@ async function ocrLayout(book: string, pageNumber: number): Promise<PageLayout |
   return { text, pieces };
 }
 
-async function pageLayout(pdf: PDFDocumentProxy, book: string, pageNumber: number) {
+/** Sayfanın metni ve parçaların konumları; metni yoksa OCR sonucu. */
+export async function pageLayout(pdf: PDFDocumentProxy, book: string, pageNumber: number) {
   const layout = await textLayout(pdf, pageNumber);
   if (layout.text.replace(/\s/g, "").length >= 20) return layout;
   return (await ocrLayout(book, pageNumber)) ?? layout;

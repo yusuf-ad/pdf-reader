@@ -14,7 +14,7 @@ const STORE = "kv";
 const MIGRATED = "meta:migrated-from-local-storage";
 
 /** Kitap başına tutulan veriler; anahtar `${tür}:${kitap}` */
-const BOOK_KINDS = ["annotations", "chat-notes", "chat", "progress", "bookmarks", "toc", "profile", "ocr-off"] as const;
+const BOOK_KINDS = ["annotations", "chat-notes", "chat", "progress", "bookmarks", "toc", "profile", "ocr-off", "ai-marks"] as const;
 export type BookKind = (typeof BOOK_KINDS)[number];
 
 export const bookKey = (kind: BookKind, book: string) => `${kind}:${book}`;

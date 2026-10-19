@@ -122,7 +122,9 @@ function wrap(text: string, font: PDFFont, size: number, maxWidth: number) {
 function drawNote(page: PDFPage, note: Note, font: PDFFont, w: number, h: number, m: number[]) {
   const size = note.size * w;
   // Ekrandaki maxWidth: max(80px, kalan genişlik − 8px); px ile pt aynı orana sahip
-  const maxWidth = Math.max((80 / 820) * w, (1 - note.x) * w - (8 / 820) * w);
+  const maxWidth = note.width
+    ? note.width * w
+    : Math.max((80 / 820) * w, (1 - note.x) * w - (8 / 820) * w);
   const ascent = font.heightAtSize(size, { descender: false });
   const lines = wrap(note.text, font, size, maxWidth);
   lines.forEach((line, i) => {

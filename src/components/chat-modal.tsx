@@ -55,17 +55,22 @@ import {
   useMemoryEnabled,
 } from "@/lib/memory-store";
 import { getMarksText } from "@/lib/marks";
+import { renderMarkedPage } from "@/lib/page-image";
 import { getPageText } from "@/lib/pdf-search";
 import { bookKey, get, set } from "@/lib/storage";
 import {
   parseQuizRequest,
   parseSkill,
+  parseCheckRequest,
+  parseMarkRequest,
   parseWordsRequest,
   SKILLS,
   skillLabel,
   type SkillRequest,
 } from "@/lib/skills";
 import Quiz from "./quiz";
+import type { MarkInput } from "@/lib/page-marks";
+import { MarkCard } from "./ai-marker";
 import WordProposal from "./word-proposal";
 
 const MAX_IMAGES = 4;
@@ -123,6 +128,8 @@ type Props = {
   onImageTaken?: () => void;
   /** Test açıklamasındaki sayfa bağlantısı */
   onGoTo?: (page: number) => void;
+  /** Yanlış soruları sayfada işaretlet (sohbet küçülür, asistan imleci gezer) */
+  onMarkQuestions?: (id: string, input: MarkInput) => void;
 };
 
 const IMAGE_PROMPT = "Bu soruyu çöz ve adım adım açıkla.";
@@ -179,6 +186,7 @@ function ChatWindow({
   pendingImage,
   onImageTaken,
   onGoTo,
+  onMarkQuestions,
 }: Props & { sessionId: string; onOpenSession: (id: string) => void }) {
   const [profile, setProfile] = useState<string | null>(null);
 
@@ -200,7 +208,12 @@ function ChatWindow({
     };
   }, [open, pdf, book, title]);
 
-  /** Her isteğe eklenen kitap bilgisi: künye, profil, açık bölüm ve sayfa. */
+  // Açık sayfa chip'i: kaldırılırsa yalnızca o sayfa için kapalı kalır, sayfa değişince ya da gönderince geri gelir
+  const [pageOffAt, setPageOffAt] = useState<number | null>(null);
+  const pageOff = pageOffAt === currentPage;
+  const pagePreview = usePagePreview(open, pdf, book, currentPage);
+
+  /** Her isteğe eklenen kitap bilgisi: künye, profil, açık bölüm ve sayfa (chip kaldırıldıysa sayfa metni ve işaretleri olmadan). */
   const bookBody = async (): Promise<{ book?: BookContext }> => {
     if (!pdf || !book) return {};
     const [info, profile, pageText, marks] = await Promise.all([
@@ -212,8 +225,8 @@ function ChatWindow({
         (p) => getPageText(pdf, p, book),
         profileStore(book),
       ),
-      getPageText(pdf, currentPage, book).catch(() => ""),
-      getMarksText(pdf, book, currentPage).catch(() => null),
+      pageOff ? "" : getPageText(pdf, currentPage, book).catch(() => ""),
+      pageOff ? null : getMarksText(pdf, book, currentPage).catch(() => null),
     ]);
     return {
       book: {
@@ -310,7 +323,8 @@ function ChatWindow({
       messageId: answer.id,
       text: splitSuggestions(textOf(answer)).body,
       question: question.slice(0, 300),
-      page: meta?.reference?.page ?? (meta?.skill ? null : currentPage),
+      page:
+        meta?.reference?.page ?? meta?.page ?? (meta?.skill ? null : currentPage),
     });
   }, []);
 
@@ -351,7 +365,10 @@ function ChatWindow({
     }
     // Düzenlenen soru yerinde değişir; görselleri ve seçili metni korunur
     const files = asked.parts.filter((p) => p.type === "file");
-    send({ text, files, metadata: asked.metadata, messageId: id });
+    const metadata = asked.metadata?.skill
+      ? asked.metadata
+      : { ...asked.metadata, page: pageOff ? undefined : currentPage };
+    send({ text, files, metadata, messageId: id });
   };
   useEffect(() => {
     resendRef.current = resendNow;
@@ -440,12 +457,19 @@ function ChatWindow({
     } finally {
       setReading(null);
     }
-    send({
-      text,
-      metadata: {
-        skill: { name, from, to, fileName: title, pages, emptyPages, ...extra },
-      },
-    });
+    // Cevap kontrolü: kalemle işaretlenen şıklar metinde yok; sayfa işaretleriyle görsel olarak gider
+    let files: FileUIPart[] = [];
+    if (name === "kontrol" && book) {
+      try {
+        files = [await renderMarkedPage(pdf, book, from)];
+      } catch {
+        return setNotice("Sayfanın görüntüsü alınamadı.");
+      }
+    }
+    const metadata = {
+      skill: { name, from, to, fileName: title, pages, emptyPages, ...extra },
+    };
+    send(files.length ? { text, files, metadata } : { text, metadata });
   };
 
   const ask = (text: string) => {
@@ -499,8 +523,34 @@ function ChatWindow({
       runSkill(text, "kelime", words.from, words.to, { request: text });
       return;
     }
+    // "3, 7 ve 12'yi yanlış yaptım işaretle": sayfa tam okunur, model çözüp işaretletir
+    const mark =
+      !reference && !images.length && pdf && onMarkQuestions
+        ? parseMarkRequest(text, pdf.numPages, currentPage)
+        : null;
+    if (mark) {
+      setInput("");
+      runSkill(text, "isaretle", mark.page, mark.page, { request: text });
+      return;
+    }
+    // "işaretlediğim soruları kontrol et": sayfa işaretleriyle görsel olarak gider, model yanlışları bulur
+    const check =
+      !reference && !images.length && pdf && onMarkQuestions
+        ? parseCheckRequest(text, pdf.numPages, currentPage)
+        : null;
+    if (check) {
+      setInput("");
+      runSkill(text, "kontrol", check.page, check.page, { request: text });
+      return;
+    }
     setInput("");
-    const metadata = reference ? { reference } : undefined;
+    // Chip kaldırıldıysa seçimle gelen sayfa metni de gitmez
+    const metadata = {
+      ...(reference && {
+        reference: pageOff ? { ...reference, pageText: undefined } : reference,
+      }),
+      ...(!pageOff && { page: currentPage }),
+    };
     if (images.length)
       send(
         text ? { text, files: images, metadata } : { files: images, metadata },
@@ -508,6 +558,7 @@ function ChatWindow({
     else send({ text, metadata });
     setImages([]);
     onClearReference();
+    setPageOffAt(null);
   };
 
   return (
@@ -645,6 +696,13 @@ function ChatWindow({
                 gibi yazarak da isteyebilirsin.
               </p>
               <p className="mt-4">
+                Test çözdüysen şıklarını kalemle işaretleyip “cevaplarımı
+                kontrol et” yaz: işaretlerini sayfadan okur, yanlışlarının
+                numarasını sarı, doğru şıkkı yeşil işaretler ve yanına kısa not
+                yazar. Yanlışlarını biliyorsan “3 ve 7&apos;yi yanlış yaptım,
+                işaretle” de diyebilirsin.
+              </p>
+              <p className="mt-4">
                 Ekran görüntüsü de ekleyebilirsin: <Kbd>Ctrl V</Kbd> ile
                 yapıştır ya da buraya sürükle. İçindeki yazıyı okur, çevirir,
                 açıklar.
@@ -670,7 +728,9 @@ function ChatWindow({
                 streaming={busy && i === messages.length - 1}
                 onResend={busy ? undefined : resend}
                 fileName={fileName}
+                book={book}
                 onGoTo={onGoTo}
+                onMark={onMarkQuestions}
               />
             ))}
 
@@ -723,6 +783,24 @@ function ChatWindow({
         className={`border-t border-rule px-6 pt-3 pb-3 ${panel ? "hidden" : ""}`}
       >
         <div className="mx-auto max-w-[70ch]">
+          {pdf && (
+            <div className="mb-2 flex items-baseline gap-3 text-xs">
+              <PageChip
+                page={currentPage}
+                preview={pagePreview?.page === currentPage ? pagePreview : null}
+                off={pageOff}
+                onToggle={() => {
+                  setPageOffAt(pageOff ? null : currentPage);
+                  inputRef.current?.focus();
+                }}
+              />
+              {!reference && messages.length === 0 && (
+                <span className="ml-auto text-muted">
+                  Seçip <Kbd>Ctrl K</Kbd> ile metin ekleyebilirsin.
+                </span>
+              )}
+            </div>
+          )}
           {reference ? (
             <div className="mb-2 flex items-start gap-2">
               <div className="min-w-0 flex-1">
@@ -737,6 +815,7 @@ function ChatWindow({
               </button>
             </div>
           ) : (
+            !pdf &&
             messages.length === 0 && (
               <p className="mb-2 text-xs text-muted">
                 Referans yok. PDF&apos;te seçip <Kbd>Ctrl K</Kbd> ile
@@ -865,7 +944,9 @@ const Message = memo(function Message({
   streaming,
   onResend,
   fileName,
+  book,
   onGoTo,
+  onMark,
 }: {
   message: ChatMessage;
   index: number;
@@ -877,7 +958,9 @@ const Message = memo(function Message({
   /** Soruyu yeniden sorar; metin verilirse soru önce onunla değiştirilir */
   onResend?: (id: string, text?: string) => void;
   fileName: string | null;
+  book: string | null;
   onGoTo?: (page: number) => void;
+  onMark?: (id: string, input: MarkInput) => void;
 }) {
   const text = textOf(m);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -941,6 +1024,23 @@ const Message = memo(function Message({
                 onGoTo={onGoTo}
               />
             </div>
+          ) : p.type === "tool-markQuestions" ? (
+            // Yanlış soruları işaretleme: akış sırasında geldiyse sayfada kendiliğinden başlar
+            <div key={p.toolCallId} className={body ? "mt-3" : ""}>
+              <MarkCard
+                id={p.toolCallId}
+                input={p.input}
+                ready={
+                  p.state === "input-available" ||
+                  p.state === "output-available"
+                }
+                streaming={streaming}
+                book={book}
+                error={p.state === "output-error" ? p.errorText : undefined}
+                onRun={onMark}
+                onGoTo={onGoTo}
+              />
+            </div>
           ) : null,
         )}
         {sources.length > 0 && !streaming && <Sources sources={sources} />}
@@ -996,6 +1096,22 @@ const Message = memo(function Message({
         <div className="mb-1.5 flex h-5 items-baseline gap-4 text-xs">
           <span className="flex-1 text-[11px] tracking-[0.12em] text-muted uppercase">
             Soru
+            {m.metadata?.page &&
+              !m.metadata.reference &&
+              !m.metadata.skill &&
+              (onGoTo ? (
+                <button
+                  onClick={() => onGoTo(m.metadata!.page!)}
+                  title="Bu soru sorulurken açık olan sayfaya git"
+                  className="ml-2 tracking-normal normal-case hover:text-ink"
+                >
+                  · s. {m.metadata.page}
+                </button>
+              ) : (
+                <span className="ml-2 tracking-normal normal-case">
+                  · s. {m.metadata.page}
+                </span>
+              ))}
           </span>
           {draft === null && onResend && (
             <span className="flex gap-4 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
@@ -1399,6 +1515,98 @@ function ReferenceQuote({ reference }: { reference: Reference }) {
         {reference.text}
       </p>
     </div>
+  );
+}
+
+type PagePreview = {
+  page: number;
+  chapter: string | null;
+  /** Sayfanın başı; chip'in üzerine gelince görünür */
+  excerpt: string;
+  empty: boolean;
+};
+
+/** Açık sayfanın chip'te gösterilen özeti: bölüm adı ve metnin başı. */
+function usePagePreview(
+  open: boolean,
+  pdf: PDFDocumentProxy | null,
+  book: string | null,
+  page: number,
+) {
+  const [preview, setPreview] = useState<PagePreview | null>(null);
+  useEffect(() => {
+    if (!open || !pdf || !book) return;
+    let active = true;
+    Promise.all([
+      getPageText(pdf, page, book).catch(() => ""),
+      getBookInfo(pdf).catch(() => null),
+    ]).then(([text, info]) => {
+      if (!active) return;
+      const outline = info?.outline.length
+        ? info.outline
+        : (loadGeneratedToc(book) ?? []);
+      const clean = text.replace(/\s+/g, " ").trim();
+      setPreview({
+        page,
+        chapter: chapterAt(outline, page),
+        excerpt: clean.slice(0, 400),
+        empty: clean.length < MIN_PAGE_CHARS,
+      });
+    });
+    return () => {
+      active = false;
+    };
+  }, [open, pdf, book, page]);
+  return preview;
+}
+
+/** Soruyla birlikte gidecek açık sayfa; kaldırılınca sayfa metni gönderilmez. */
+function PageChip({
+  page,
+  preview,
+  off,
+  onToggle,
+}: {
+  page: number;
+  preview: PagePreview | null;
+  off: boolean;
+  onToggle: () => void;
+}) {
+  if (off)
+    return (
+      <button
+        onClick={onToggle}
+        title="Açık sayfayı soruya yeniden ekle"
+        className="border border-dashed border-rule px-2 py-0.5 text-muted hover:border-muted hover:text-ink"
+      >
+        + Sayfa {page}
+      </button>
+    );
+  return (
+    <span
+      title={
+        preview?.empty
+          ? "Bu sayfada okunabilir metin yok (taranmış, OCR yapılmamış)"
+          : preview?.excerpt
+            ? `${preview.excerpt}…`
+            : undefined
+      }
+      className="flex min-w-0 items-baseline gap-2 border border-rule bg-paper px-2 py-0.5"
+    >
+      <span className="shrink-0 text-ink">Sayfa {page}</span>
+      {preview?.chapter && (
+        <span className="min-w-0 truncate text-muted">{preview.chapter}</span>
+      )}
+      {preview?.empty && <span className="shrink-0 text-accent">metin yok</span>}
+      <button
+        onClick={onToggle}
+        aria-label="Açık sayfayı bu sorudan çıkar"
+        title="Bu soruda sayfayı gönderme"
+        className="shrink-0 text-muted hover:text-accent"
+      >
+        ×
+      </button>
+    </span>
   );
 }
 

@@ -8,6 +8,7 @@ import "react-pdf/dist/Page/TextLayer.css";
 import type { Tool } from "@/lib/annotations";
 import { useOcr } from "@/lib/ocr";
 import { PDF_OPTIONS } from "@/lib/pdfjs"; // worker ayarını da yapar
+import { AiCursor } from "./ai-marker";
 import AnnotationLayer from "./annotation-layer";
 import CropLayer, { type CropRegion } from "./crop-layer";
 import HighlightLayer from "./highlight-layer";
@@ -189,6 +190,7 @@ function LazyPage({
             color={annotation.color}
           />
         )}
+        {visible && <AiCursor page={pageNumber} width={width} />}
         {visible && annotation.onCrop && (
           <CropLayer page={pageNumber} width={width} height={frameHeight} onCrop={annotation.onCrop} />
         )}

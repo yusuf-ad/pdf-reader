@@ -1,6 +1,6 @@
 /** Sohbette "/" ile çağrılan hazır görevler (skill). İstemci ve sunucu ortak kullanır. */
 
-export type SkillName = "ozet" | "sayfa" | "test" | "kelime";
+export type SkillName = "ozet" | "sayfa" | "test" | "kelime" | "isaretle" | "kontrol";
 
 export type SkillInfo = { name: SkillName; usage: string; description: string };
 
@@ -84,6 +84,51 @@ export function parseWordsRequest(
   return parseRange(text, numPages, currentPage);
 }
 
+/**
+ * Yanlış yapılan soruları işaretleme isteğini tanır: "3, 7 ve 12'yi yanlış yaptım işaretle",
+ * "s. 40'taki yanlışlarım 2 ve 5, işaretler misin". Tek sayfa: belirtilmezse açık sayfa.
+ * Soru numarası yoksa null (model hangileri olduğunu sorar).
+ */
+export function parseMarkRequest(
+  input: string,
+  numPages: number,
+  currentPage: number,
+): { page: number } | null {
+  const text = input.toLocaleLowerCase("tr");
+  if (!numPages || !/yanlış/u.test(text) || !/işaret/u.test(text)) return null;
+  const pageRef = /(?:s\.|sayfa)\s*(\d+)|(\d+)\.?\s*sayfa/u;
+  const single = text.match(pageRef);
+  // Sayfa numarası çıkarıldıktan sonra soru numarası kalmalı
+  if (!/\d/.test(text.replace(pageRef, ""))) return null;
+  const page = single ? Math.min(numPages, Math.max(1, +(single[1] ?? single[2]))) : currentPage;
+  return { page };
+}
+
+/**
+ * Kullanıcının sayfada işaretlediği cevapların kontrolünü tanır: "soruları check et",
+ * "cevaplarımı kontrol et", "işaretlediğim şıklar doğru mu". Tek sayfa: belirtilmezse açık sayfa.
+ */
+export function parseCheckRequest(
+  input: string,
+  numPages: number,
+  currentPage: number,
+): { page: number } | null {
+  const text = input.toLocaleLowerCase("tr");
+  if (!numPages) return null;
+  const about = /(soru|cevap|şık|test|işaretle)/u.test(text);
+  // "hangi soruları yanlış yapmışım", "kaç doğrum var", "yanlışlarım neler" de kontrol isteğidir
+  const check =
+    /(kontrol|check|incele|doğru\s*mu|puanla|değerlendir|yanlışlarım|doğrularım|kaç\s*(tane\s*)?(doğru|yanlış)|yanlış\s*yap|doğru\s*yap|hangi(si|leri)?\s.*(doğru|yanlış))/u.test(
+      text,
+    );
+  // Tek bir sorunun açıklaması istenmişse ("4. soru neden yanlış") normal soru gibi gider
+  const explain = /(neden|niye|niçin|açıkla|anlat)/u.test(text);
+  if (!about || !check || explain) return null;
+  const single = text.match(/(?:s\.|sayfa)\s*(\d+)|(\d+)\.?\s*sayfa/u);
+  const page = single ? Math.min(numPages, Math.max(1, +(single[1] ?? single[2]))) : currentPage;
+  return { page };
+}
+
 /** İstekteki sayfa aralığı: "12-20", "s. 5", "bu sayfa"; belirtilmezse tüm belge. */
 function parseRange(text: string, numPages: number, currentPage: number) {
   const clamp = (n: number) => Math.min(numPages, Math.max(1, n));
@@ -102,7 +147,14 @@ function parseRange(text: string, numPages: number, currentPage: number) {
   return { from: 1, to: numPages };
 }
 
-const SKILL_TITLES: Record<SkillName, string> = { ozet: "Özet", sayfa: "Sayfa özeti", test: "Test", kelime: "Kelime" };
+const SKILL_TITLES: Record<SkillName, string> = {
+  ozet: "Özet",
+  sayfa: "Sayfa özeti",
+  test: "Test",
+  kelime: "Kelime",
+  isaretle: "Yanlışları işaretle",
+  kontrol: "Cevap kontrolü",
+};
 
 export const skillLabel = (s: Pick<SkillRequest, "name" | "from" | "to">) =>
   `${SKILL_TITLES[s.name]} · s. ${s.from === s.to ? s.from : `${s.from}–${s.to}`}`;
@@ -142,13 +194,30 @@ export function skillPrompt(s: SkillRequest, body: string, partial: boolean) {
 - Aynı kelime birden çok yerde geçiyorsa bir kez al, anlamını en iyi gösteren cümleyle.
 - Türkçe karşılığı bu bağlamdaki anlamı olsun. Kullanıcı eş anlamlı isterse her kelimenin yaygın eş anlamlılarını synonyms alanına yaz (genel bilgin; metinde geçmesi gerekmez), istemezse boş bırak.
 - İsteğe uyan bir şey bulamazsan aracı çağırma, bunu kısaca söyle.`
+      : s.name === "isaretle"
+      ? `Kullanıcı bu sayfadaki bazı soruları yanlış yaptı ve sayfada işaretlenmesini istiyor. Söylediği soruları metinden çöz ve markQuestions aracıyla ver.
+- Kullanıcının isteği: "${(s.request ?? "").slice(0, 500)}"
+- Yalnızca kullanıcının söylediği numaraları al. Metinde bulamadığın numarayı atla.
+- Her soruyu dikkatle çöz. Sayfada cevap anahtarı varsa onu esas al.
+- checked ve chosen: null. number: soru numarası, metinde yazdığı gibi (ör. "12"). section: sayfada numaralar tekrar ediyorsa (Test 1, Test 2…) sorunun altında bulunduğu başlık, metinde yazdığı gibi; yoksa null. correct: doğru şıkkın harfi (ör. "C"). correctText: o şıkkın metni, metinden aynen kopyalanmış.
+- note: sayfaya yazılacak kısa Türkçe not, en fazla 2 kısa cümle: neden o şık doğru, varsa tuzak neydi. Şıkkı tekrar yazma, "Doğru: C" gibi bir başlangıç da ekleme (o ayrıca yazılır).`
+      : s.name === "kontrol"
+      ? `Kullanıcı bu sayfadaki soruları çözdü ve seçtiği şıkları sayfada işaretledi. Cevaplarını kontrol et ve yanlış yaptıklarını markQuestions aracıyla ver.
+- Kullanıcının isteği: "${(s.request ?? "").slice(0, 500)}"
+- Ekteki görsel, kullanıcının işaretleriyle birlikte sayfanın kendisidir. Her soruda kullanıcının hangi şıkkı seçtiğini görselden oku: daire içine alma, tik, çarpı, altını çizme, fosforlu kalem ya da vurgu olabilir. Sayfa metni (aşağıda) yazıyı doğru okuman için.
+- Hiçbir şıkkı işaretlenmemiş soruyu atla. Bir soruda seçim belirsizse (iki şık işaretli gibi) en belirgin olanı al.
+- Doğru cevabı bul: sayfada ya da metinde cevap anahtarı varsa onu esas al, yoksa soruyu dikkatle kendin çöz.
+- checked: şık işaretlenmiş soru sayısı. questions: YALNIZCA kullanıcının yanlış yaptığı sorular; hepsi doğruysa boş liste.
+- number: soru numarası, metinde yazdığı gibi. section: sayfada numaralar tekrar ediyorsa (Test 1, Test 2…) sorunun altında bulunduğu başlık, metinde yazdığı gibi; yoksa null. chosen: kullanıcının seçtiği şıkkın harfi. correct: doğru şıkkın harfi. correctText: doğru şıkkın metni, metinden aynen kopyalanmış.
+- note: sayfaya yazılacak kısa Türkçe not, en fazla 2 kısa cümle: neden doğru şık doğru, kullanıcının seçtiği neden yanlış. "Doğru: C" gibi bir başlangıç ekleme (o ayrıca yazılır).
+- Görselde hiçbir işaretli şık göremiyorsan checked 0, questions boş olsun.`
       : s.name === "sayfa"
       ? "Bu sayfayı özetle: ana fikri birkaç cümleyle ver, sonra önemli noktaları madde madde sırala. Geçen önemli kişi, kavram ve terimleri kısaca açıkla."
       : `Bu metni özetle:
 1. Önce 3-5 cümlelik genel bir özet ver.
 2. Sonra bölüm bölüm (metinde bölüm başlıkları varsa onları kullan, yoksa konu değişimlerine göre) ana noktaları madde madde sırala; her bölümün yanına sayfa aralığını yaz.
 3. Sonda öne çıkan kişileri, kavramları ve temel çıkarımları listele.`;
-  const language = s.name === "test" || s.name === "kelime" ? "" : "\nTürkçe yaz.";
+  const language = s.name === "ozet" || s.name === "sayfa" ? "\nTürkçe yaz." : "";
   // Uzun belgede parçalardan önce özet (kelime aramasında bulunanlar) çıkarılır
   const tag = partial ? (s.name === "kelime" ? "parca_bulgulari" : "bolum_ozetleri") : "belge";
   return `${task}${language}
