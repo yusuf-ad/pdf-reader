@@ -54,6 +54,18 @@ export async function chooseTarget(book: string, name: string, saveAs: boolean):
 }
 
 /**
+ * Otomatik kayıt için: hatırlanan dosya, yalnızca yazma izni bu oturumda zaten verildiyse.
+ * İzin istenemez (kullanıcı bir şeye basmadı), o yüzden hiçbir pencere açmaz.
+ */
+export async function autoTarget(book: string): Promise<FileSystemFileHandle | null> {
+  if (!picker()) return null;
+  const saved = (await getSaveHandle(book).catch(() => null)) as Permissioned | null;
+  if (!saved?.queryPermission) return saved;
+  const state = await saved.queryPermission({ mode: "readwrite" }).catch(() => "denied");
+  return state === "granted" ? saved : null;
+}
+
+/**
  * Kayıt başarısız olduysa, kayıt penceresinin az önce oluşturduğu boş dosyayı siler.
  * Daha önce kaydedilmiş (içi dolu) dosyaya dokunmaz.
  */

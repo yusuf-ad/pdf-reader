@@ -53,6 +53,7 @@ const MAX_PAGE_WIDTH = 820;
 const MIN_SCALE = 0.4;
 const MAX_SCALE = 3;
 const PAGE_TOP_GAP = 16;
+const AUTOSAVE_INTERVAL = 10 * 60 * 1000;
 
 type LaunchQueue = {
   setConsumer: (consumer: (params: { files?: FileSystemFileHandle[] }) => void) => void;
@@ -122,6 +123,9 @@ export default function Reader() {
   // Açılan kitabın kitaplığa yazılması (kapak üretmeden önce beklenir)
   const savingBookRef = useRef<Promise<unknown>>(Promise.resolve());
   const loadedKeyRef = useRef<string | null>(null);
+  // Son kaydedilen notlar; otomatik kayıt yalnızca bunlar değiştiyse yazar
+  const lastSavedRef = useRef<{ book: string; data: unknown } | null>(null);
+  const savingRef = useRef(false);
   // Son seçilen metin; Ctrl K ile sohbete referans olarak eklenir
   // fileName verilmezse açık dosya sayılır
   const lastSelectionRef = useRef<
@@ -512,14 +516,16 @@ export default function Reader() {
         const { chooseTarget, discardTarget, writeTarget } = await import("@/lib/save-target");
         const target = await chooseTarget(key, file.name, saveAs);
         if (!target) return;
+        const annotations = getBookAnnotations(key);
         try {
           const { exportAnnotatedPdf } = await import("@/lib/export-pdf");
-          await writeTarget(key, target, await exportAnnotatedPdf(file, getBookAnnotations(key)), file.name);
+          await writeTarget(key, target, await exportAnnotatedPdf(file, annotations), file.name);
         } catch (err) {
           await discardTarget(target);
           throw err;
         }
         if (target !== "download") setSavedTo({ book: key, name: target.name });
+        lastSavedRef.current = { book: key, data: annotations };
         setJustSaved(true);
         setTimeout(() => setJustSaved(false), 2000);
       } catch (err) {
@@ -545,6 +551,44 @@ export default function Reader() {
       active = false;
     };
   }, [key]);
+
+  // Kitap açıldığında var olan notlar kaydedilmiş sayılır; otomatik kayıt yeni değişiklikleri yazar
+  useEffect(() => {
+    if (key) lastSavedRef.current = { book: key, data: getBookAnnotations(key) };
+  }, [key]);
+
+  useEffect(() => {
+    savingRef.current = saving;
+  }, [saving]);
+
+  // 10 dakikada bir otomatik kayıt. Yalnızca daha önce kaydedilmiş ve yazma izni bu oturumda
+  // verilmiş dosyaya, hiçbir şey sormadan yazar; ilk kayıt yine Ctrl S ile yapılır.
+  useEffect(() => {
+    if (!file || !key) return;
+    const id = setInterval(async () => {
+      const annotations = getBookAnnotations(key);
+      const last = lastSavedRef.current;
+      if (savingRef.current || (last?.book === key && last.data === annotations)) return;
+      const { autoTarget, writeTarget } = await import("@/lib/save-target");
+      const target = await autoTarget(key);
+      if (!target || savingRef.current) return;
+      savingRef.current = true;
+      setSaving(true);
+      try {
+        const { exportAnnotatedPdf } = await import("@/lib/export-pdf");
+        await writeTarget(key, target, await exportAnnotatedPdf(file, annotations), file.name);
+        lastSavedRef.current = { book: key, data: annotations };
+        setJustSaved(true);
+        setTimeout(() => setJustSaved(false), 2000);
+      } catch {
+        // Sessizce geç; bir sonraki Ctrl S yer sorar ya da hatayı gösterir
+      } finally {
+        savingRef.current = false;
+        setSaving(false);
+      }
+    }, AUTOSAVE_INTERVAL);
+    return () => clearInterval(id);
+  }, [file, key]);
 
   // --- Yapamadığım sorular ----------------------------------------------
 

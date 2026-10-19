@@ -165,7 +165,8 @@ export default function Toolbar(p: Props) {
             ? "Kaydediliyor…"
             : p.savedTo
               ? `Notları PDF'e yazıp ${p.savedTo} dosyasına kaydet  Ctrl S
-Farklı kaydet: Ctrl Shift S ya da Shift tık`
+Farklı kaydet: Ctrl Shift S ya da Shift tık
+Değişiklik varsa 10 dakikada bir otomatik kaydedilir`
               : "Notları PDF'e yazıp kaydet  Ctrl S"
         }
         onClick={(e) => p.onSave(e.shiftKey)}
