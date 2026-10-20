@@ -145,6 +145,15 @@ export function undo(book: string) {
   return false;
 }
 
+/** Araya sayfa eklenince geri alma geçmişi de yeni anahtara ve kayan sayfalara taşınır. */
+export function shiftHistory(from: string, to: string, after: number) {
+  for (const entry of history) {
+    if (entry.book !== from) continue;
+    entry.book = to;
+    if (entry.page > after) entry.page++;
+  }
+}
+
 /** Noktanın (px) çizgiye uzaklığı `radius` px'ten azsa true. */
 export function strokeHit(stroke: Stroke, x: number, y: number, w: number, h: number, radius: number) {
   const p = stroke.points;

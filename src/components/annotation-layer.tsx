@@ -50,8 +50,32 @@ export default function AnnotationLayer({ book, page, width: w, height: h, tool,
   const [draft, setDraft] = useState<number[] | null>(null);
   const [newNote, setNewNote] = useState<Note | null>(null);
   const [editingId, setEditing] = useState<string | null>(null);
-  // Yazı aracından çıkınca düzenleme biter
-  const editing = tool === "text" ? editingId : null;
+  // Başka bir araca geçince düzenleme biter (araçsızken menüden düzenlenebilir)
+  const editing = tool === "text" || !tool ? editingId : null;
+  // Araç seçili değilken tıklanan notun menüsü
+  const [menuId, setMenu] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuNote = !tool ? items.find((a): a is Note => a.type === "text" && a.id === menuId) : undefined;
+
+  useEffect(() => {
+    if (!menuNote) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenu(null);
+      if (e.key === "Delete" || e.key === "Backspace") {
+        setMenu(null);
+        removeAnnotations(book, page, [menuNote.id]);
+      }
+    };
+    const onDown = (e: MouseEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenu(null);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onDown);
+    };
+  }, [menuNote, book, page]);
   // Sağ tık basılı tutulurken geçici silgi
   const [rightErase, setRightErase] = useState(false);
   const active = rightErase ? "eraser" : tool;
@@ -147,7 +171,13 @@ export default function AnnotationLayer({ book, page, width: w, height: h, tool,
     e.currentTarget.releasePointerCapture(e.pointerId);
     setRightErase(false);
     if (active === "pen" && draft) {
-      addAnnotation(book, page, { id: newId(), type: "ink", color, width: PEN_WIDTH, points: draft });
+      addAnnotation(book, page, {
+        id: newId(),
+        type: "ink",
+        color,
+        width: PEN_WIDTH,
+        points: draft,
+      });
     }
     if (active === "marker" && draft) {
       addAnnotation(book, page, {
@@ -165,85 +195,118 @@ export default function AnnotationLayer({ book, page, width: w, height: h, tool,
   const notes = items.filter((a): a is Note => a.type === "text");
 
   return (
-    <div
-      ref={ref}
-      data-annotation-layer
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
-      onContextMenu={(e) => {
-        if (tool && !(e.target as HTMLElement).isContentEditable) e.preventDefault();
-      }}
-      style={{
-        cursor: active ? CURSORS[active] : undefined,
-        pointerEvents: tool ? "auto" : "none",
-        touchAction: tool ? "none" : undefined,
-      }}
-      // Yazı ve çizgiler de sayfa gibi temaya uyar (koyu temada siyah mürekkep açık görünür)
-      className="absolute inset-0 z-10 select-none [filter:var(--page-filter)]"
-    >
-      <svg width={w} height={h} className="absolute inset-0 overflow-visible" aria-hidden>
-        {/* Fosforlu kalem izleri HighlightLayer'da, sayfayla karışarak çizilir */}
-        {items.map(
-          (a) =>
-            a.type === "ink" &&
-            !a.marker && (
-              <path
-                key={a.id}
-                d={strokePath(a.points, w, h)}
-                stroke={a.color}
-                strokeWidth={Math.max(1, a.width * w)}
-                fill="none"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            ),
-        )}
-        {draft && (
-          <path
-            d={strokePath(draft, w, h)}
-            stroke={color}
-            strokeOpacity={active === "marker" ? 0.35 : 1}
-            strokeWidth={Math.max(1, (active === "marker" ? MARKER_WIDTH : PEN_WIDTH) * w)}
-            fill="none"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+    <>
+      <div
+        ref={ref}
+        data-annotation-layer
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onContextMenu={(e) => {
+          if (tool && !(e.target as HTMLElement).isContentEditable) e.preventDefault();
+        }}
+        style={{
+          cursor: active ? CURSORS[active] : undefined,
+          pointerEvents: tool ? "auto" : "none",
+          touchAction: tool ? "none" : undefined,
+        }}
+        // Yazı ve çizgiler de sayfa gibi temaya uyar (koyu temada siyah mürekkep açık görünür)
+        className="absolute inset-0 z-10 select-none [filter:var(--page-filter)]"
+      >
+        <svg width={w} height={h} className="absolute inset-0 overflow-visible" aria-hidden>
+          {/* Fosforlu kalem izleri HighlightLayer'da, sayfayla karışarak çizilir */}
+          {items.map(
+            (a) =>
+              a.type === "ink" &&
+              !a.marker && (
+                <path
+                  key={a.id}
+                  d={strokePath(a.points, w, h)}
+                  stroke={a.color}
+                  strokeWidth={Math.max(1, a.width * w)}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              ),
+          )}
+          {draft && (
+            <path
+              d={strokePath(draft, w, h)}
+              stroke={color}
+              strokeOpacity={active === "marker" ? 0.35 : 1}
+              strokeWidth={Math.max(1, (active === "marker" ? MARKER_WIDTH : PEN_WIDTH) * w)}
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          )}
+        </svg>
+
+        {notes.map((note) => (
+          <NoteView
+            key={`${note.id}:${editing === note.id}`}
+            note={note}
+            w={w}
+            h={h}
+            tool={active}
+            editing={editing === note.id}
+            onClick={() => (tool === "text" ? setEditing(note.id) : !tool && setMenu(note.id))}
+            onMove={(x, y) => updateNote(book, page, note.id, { x, y })}
+            onCommit={(text) => {
+              setEditing(null);
+              if (!text.trim()) removeAnnotations(book, page, [note.id]);
+              else if (text !== note.text) updateNote(book, page, note.id, { text });
+            }}
+          />
+        ))}
+        {newNote && (
+          <NoteView
+            note={newNote}
+            w={w}
+            h={h}
+            tool={active}
+            editing
+            onCommit={(text) => {
+              setNewNote(null);
+              if (text.trim()) addAnnotation(book, page, { ...newNote, text });
+            }}
           />
         )}
-      </svg>
-
-      {notes.map((note) => (
-        <NoteView
-          key={`${note.id}:${editing === note.id}`}
-          note={note}
-          w={w}
-          h={h}
-          tool={active}
-          editing={editing === note.id}
-          onEdit={() => setEditing(note.id)}
-          onMove={(x, y) => updateNote(book, page, note.id, { x, y })}
-          onCommit={(text) => {
-            setEditing(null);
-            if (!text.trim()) removeAnnotations(book, page, [note.id]);
-            else if (text !== note.text) updateNote(book, page, note.id, { text });
+      </div>
+      {menuNote && (
+        // Katmanın dışında: sayfa filtresi (koyu tema) menünün renklerini bozmasın
+        <div
+          ref={menuRef}
+          onMouseDown={(e) => e.preventDefault()}
+          style={{
+            left: Math.min(menuNote.x * w, w - 120),
+            top: menuNote.y < 0.05 ? menuNote.y * h + menuNote.size * w * 1.6 : menuNote.y * h - 34,
           }}
-        />
-      ))}
-      {newNote && (
-        <NoteView
-          note={newNote}
-          w={w}
-          h={h}
-          tool={active}
-          editing
-          onCommit={(text) => {
-            setNewNote(null);
-            if (text.trim()) addAnnotation(book, page, { ...newNote, text });
-          }}
-        />
+          className="absolute z-30 flex items-center gap-1.5 border border-rule bg-sheet px-2 py-1.5 text-xs shadow-[0_4px_16px_var(--shadow)]"
+        >
+          <button
+            onClick={() => {
+              setMenu(null);
+              setEditing(menuNote.id);
+            }}
+            className="px-1 text-muted hover:text-ink"
+          >
+            Düzenle
+          </button>
+          <button
+            onClick={() => {
+              setMenu(null);
+              removeAnnotations(book, page, [menuNote.id]);
+            }}
+            className="px-1 text-muted hover:text-accent"
+          >
+            Sil
+          </button>
+        </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -253,7 +316,7 @@ function NoteView({
   h,
   tool,
   editing,
-  onEdit,
+  onClick,
   onMove,
   onCommit,
 }: {
@@ -262,7 +325,8 @@ function NoteView({
   h: number;
   tool: Tool | null;
   editing: boolean;
-  onEdit?: () => void;
+  /** Sürüklemeden tıklanınca */
+  onClick?: () => void;
   onMove?: (x: number, y: number) => void;
   onCommit: (text: string) => void;
 }) {
@@ -284,7 +348,9 @@ function NoteView({
     sel?.addRange(range);
   }, [editing]);
 
-  const interactive = tool === "text" || tool === "eraser";
+  // Her araçta tutulup taşınabilir (kalemle cevap işaretledikten sonra asistanın notu da);
+  // silgide tıklama katmana geçer, not silinir
+  const draggable = tool !== "eraser" && !editing;
 
   return (
     <div
@@ -298,10 +364,12 @@ function NoteView({
         if (e.key === "Escape" || (e.key === "Enter" && (e.ctrlKey || e.metaKey))) {
           e.preventDefault();
           e.currentTarget.blur();
+        } else if (e.key === "Enter" && !e.shiftKey && continueList(e.currentTarget)) {
+          e.preventDefault();
         }
       }}
       onPointerDown={(e) => {
-        if (tool !== "text" || editing || e.button !== 0) return;
+        if (!draggable || e.button !== 0) return;
         e.preventDefault();
         e.stopPropagation();
         e.currentTarget.setPointerCapture(e.pointerId);
@@ -325,23 +393,72 @@ function NoteView({
           const y = Math.min(0.98, Math.max(0, note.y + offset.dy / h));
           setOffset(null);
           onMove?.(x, y);
-        } else onEdit?.();
+        } else onClick?.();
       }}
-      title={tool === "text" && !editing ? "Düzenlemek için tıkla, taşımak için sürükle" : undefined}
+      title={
+        !draggable
+          ? undefined
+          : !tool || tool === "text"
+            ? "Düzenlemek ya da silmek için tıkla, taşımak için sürükle"
+            : "Taşımak için sürükle"
+      }
       style={{
         left: note.x * w + (offset?.dx ?? 0),
         top: note.y * h + (offset?.dy ?? 0),
         maxWidth: note.width ? note.width * w : Math.max(80, (1 - note.x) * w - 8),
         fontSize: note.size * w,
         color: note.color,
-        pointerEvents: interactive || editing ? "auto" : "none",
-        cursor: tool === "text" && !editing ? "move" : undefined,
+        pointerEvents: "auto",
+        cursor: draggable ? "move" : undefined,
       }}
       className={`absolute min-w-[2ch] font-sans leading-[1.3] break-words whitespace-pre-wrap outline-none ${
-        editing ? "bg-white/70 ring-1 ring-current/40 select-text" : tool === "text" ? "hover:ring-1 hover:ring-current/30" : ""
+        editing
+          ? "bg-white/70 ring-1 ring-current/40 select-text"
+          : draggable
+            ? "hover:ring-1 hover:ring-current/30"
+            : ""
       }`}
     >
       {note.text}
     </div>
   );
+}
+
+// Numaralı ("1.", "2)", "3-", "4 ") ve madde işaretli ("-", "•") satırlar.
+// Noktalamasız numara 3 haneyle sınırlı ki "2024 yılında" gibi satırlar liste sayılmasın
+const LIST_ITEM = /^(\s*)(?:(\d+)([.)-])|(\d{1,3})()|([-*•]))(\s+)(.*)$/;
+
+/**
+ * Enter'da listeye devam: imlecin olduğu satır "2. …" ise yeni satır "3. " ile başlar.
+ * Madde boşken Enter'a basılırsa işaret silinir, liste biter. Liste satırı değilse false.
+ */
+function continueList(el: HTMLElement) {
+  const sel = window.getSelection();
+  if (!sel?.rangeCount || !sel.isCollapsed) return false;
+  const caret = sel.getRangeAt(0);
+  const before = document.createRange();
+  before.selectNodeContents(el);
+  before.setEnd(caret.startContainer, caret.startOffset);
+  const line = before.toString().split("\n").pop() ?? "";
+  const m = line.match(LIST_ITEM);
+  if (!m) return false;
+  const [, indent, numP, punctP, numBare, punctBare, bullet, space, rest] = m;
+  const num = numP ?? numBare;
+  const punct = punctP ?? punctBare ?? "";
+  if (!rest.trim()) {
+    // Boş madde: işareti sil (aynı metin düğümündeyse)
+    const node = caret.startContainer;
+    if (node.nodeType !== Node.TEXT_NODE || caret.startOffset < line.length) return false;
+    const marker = document.createRange();
+    marker.setStart(node, caret.startOffset - line.length);
+    marker.setEnd(node, caret.startOffset);
+    sel.removeAllRanges();
+    sel.addRange(marker);
+    document.execCommand("delete");
+    return true;
+  }
+  const next = num ? `${+num + 1}${punct}` : bullet;
+  // execCommand geri alma (Ctrl Z) geçmişini korur
+  document.execCommand("insertText", false, `\n${indent}${next}${space}`);
+  return true;
 }

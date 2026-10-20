@@ -46,6 +46,13 @@ export const BookmarkIcon = ({ filled }: { filled?: boolean }) => (
   </Icon>
 );
 
+export const PagePlusIcon = () => (
+  <Icon>
+    <path d="M14 3H6v18h12V7z" />
+    <path d="M14 3v4h4M12 11v6M9 14h6" />
+  </Icon>
+);
+
 export const FitWidthIcon = () => (
   <Icon>
     <path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4" />

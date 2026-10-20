@@ -181,10 +181,10 @@ export function setLastFolder(id: string | null) {
 }
 
 /** Kitabın anahtarı değişince ondan kırpılan sorular yeni anahtara bağlanır. */
-export async function renameBookQuestions(from: string, to: string) {
+export async function renameBookQuestions(from: string, to: string, movePage = (page: number) => page) {
   const all = await run<Question[]>("readonly", (s) => s.getAll());
   for (const q of all.filter((q) => q.book === from)) {
-    const next = { ...q, book: to };
+    const next = { ...q, book: to, page: q.page == null ? q.page : movePage(q.page) };
     await run("readwrite", (s) => s.put(next));
     if (cache) set(read().map((x) => (x.id === q.id ? next : x)));
   }

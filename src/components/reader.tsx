@@ -12,6 +12,7 @@ import {
   listBooks,
   loadFile,
   removeBook,
+  replaceBookFile,
   updateBook,
   type Book,
 } from "@/lib/file-store";
@@ -21,17 +22,19 @@ import {
   HIGHLIGHT_COLORS,
   INK_COLORS,
   newId,
+  shiftHistory,
   undo,
   type Tool,
 } from "@/lib/annotations";
+import type { PaperStyle } from "@/lib/blank-book";
 import type { Reference } from "@/lib/chat";
-import { deleteBookOcr, setOcrEnabled, useOcrEnabled } from "@/lib/ocr";
+import { deleteBookOcr, renameBookOcr, setOcrEnabled, useOcrEnabled } from "@/lib/ocr";
 import type { MarkInput } from "@/lib/page-marks";
 import { getPageText, usePdfSearch } from "@/lib/pdf-search";
-import { cropPage, type NewQuestion } from "@/lib/questions";
+import { cropPage, renameBookQuestions, type NewQuestion } from "@/lib/questions";
 import { loadProgress, saveProgress, toggleBookmark, useBookmarks } from "@/lib/reading-state";
 import { extractSelection, selectedPdfText, selectionHighlights } from "@/lib/selection";
-import { deleteBook as deleteBookData, requestPersistence } from "@/lib/storage";
+import { deleteBook as deleteBookData, insertBookPage, requestPersistence } from "@/lib/storage";
 import { makeTextRenderer } from "@/lib/text-highlight";
 import type { SavedWord, Translation } from "@/lib/types";
 import { useSavedWords } from "@/lib/use-saved-words";
@@ -111,6 +114,7 @@ export default function Reader() {
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const [savedToState, setSavedTo] = useState<{ book: string; name: string } | null>(null);
+  const [inserting, setInserting] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -259,6 +263,41 @@ export default function Reader() {
       }
     },
     [refreshBooks],
+  );
+
+  /**
+   * Açık sayfanın arkasına boş sayfa ekler. PDF değiştiği için kitabın anahtarı da değişir:
+   * notlar, vurgular, yer imleri, OCR, sorular… yeni anahtara taşınır, sonraki sayfalardakiler
+   * bir sayfa kayar. Kitap yeni PDF'le yeniden açılır ve eklenen sayfaya gidilir.
+   */
+  const insertPage = useCallback(
+    async (style: PaperStyle) => {
+      if (!file || !key || !numPages || inserting) return;
+      // Düzenlenen yazı varsa önce eski anahtara kaydedilsin, sonra taşınsın
+      (document.activeElement as HTMLElement | null)?.blur();
+      setInserting(true);
+      const after = currentPage;
+      const keepScale = scale;
+      try {
+        const { insertBlankPage } = await import("@/lib/blank-book");
+        const next = await insertBlankPage(file, after, style);
+        const k = await contentKey(next);
+        const movePage = (p: number) => (p > after ? p + 1 : p);
+        await replaceBookFile(key, k, next, numPages + 1);
+        insertBookPage(key, k, after);
+        shiftHistory(key, k, after);
+        await renameBookOcr(key, k, movePage).catch(() => {});
+        await renameBookQuestions(key, k, movePage).catch(() => {});
+        saveProgress(k, after + 1);
+        await openFile(next, k);
+        setScale(keepScale);
+      } catch (err) {
+        alert(`Sayfa eklenemedi: ${(err as Error).message}`);
+      } finally {
+        setInserting(false);
+      }
+    },
+    [file, key, numPages, inserting, currentPage, scale, openFile],
   );
 
   // --- Gezinme -----------------------------------------------------------
@@ -582,9 +621,11 @@ export default function Reader() {
       const annotations = getBookAnnotations(key);
       const last = lastSavedRef.current;
       if (savingRef.current || (last?.book === key && last.data === annotations)) return;
-      const { autoTarget, writeTarget } = await import("@/lib/save-target");
-      const target = await autoTarget(key);
-      if (!target || savingRef.current) return;
+      // Hata buradan dışarı taşmasın: arka planda çalışır, kullanıcıya hata ekranı göstermemeli
+      const save = await import("@/lib/save-target").catch(() => null);
+      const target = await save?.autoTarget?.(key).catch(() => null);
+      if (!save || !target || savingRef.current) return;
+      const { writeTarget } = save;
       savingRef.current = true;
       setSaving(true);
       try {
@@ -940,6 +981,8 @@ export default function Reader() {
             onFitPage={fitPage}
             bookmarked={bookmarks.includes(currentPage)}
             onToggleBookmark={() => key && toggleBookmark(key, currentPage)}
+            onInsertPage={insertPage}
+            inserting={inserting}
             onSearch={openSearch}
             onFocusMode={toggleFocusMode}
             onHelp={() => setShowHelp(true)}
@@ -1059,6 +1102,10 @@ export default function Reader() {
               refreshBooks();
             }}
             onAdd={() => fileInputRef.current?.click()}
+            onCreateBlank={async (title, pages, style) => {
+              const { blankBookPdf } = await import("@/lib/blank-book");
+              await openFile(await blankBookPdf(title, pages, style));
+            }}
             onClose={file ? () => setLibraryOpen(false) : undefined}
           />
         </div>

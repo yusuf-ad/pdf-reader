@@ -45,6 +45,8 @@ export default function HighlightLayer({ book, page, width: w, height: h, tool, 
     if (!frame || tool) return;
     const onClick = (e: MouseEvent) => {
       if (menuRef.current?.contains(e.target as Node)) return;
+      // Notun kendi menüsü var
+      if ((e.target as HTMLElement).closest?.("[data-note-id]")) return setMenu(null);
       const sel = window.getSelection();
       if (sel && !sel.isCollapsed) return setMenu(null);
       const rect = frame.getBoundingClientRect();

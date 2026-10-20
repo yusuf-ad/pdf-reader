@@ -26,23 +26,27 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const pieceAt = (layout: PageLayout, i: number) =>
   layout.pieces.find((p) => i >= p.start && i < p.start + p.text.length);
 
-/** Soru numarası "12.", "12)", "12-", "Soru 12" biçimlerinde; satır başındakiler öncelikli. */
-function findQuestion(layout: PageLayout, number: string, from = 0) {
+/**
+ * Soru numarası "12.", "12)", "12-", "Soru 12" biçimlerinde; satır başındakiler öncelikli.
+ * `occurrence` verilirse numaranın sayfada kaçıncı geçişi (1'den) alınır.
+ */
+function findQuestion(layout: PageLayout, number: string, from = 0, occurrence?: number | null) {
   const n = escapeRe(number);
   const re = new RegExp(`(?:^|\\s)(soru\\s*${n}(?![\\p{L}\\p{N}])|${n}(?=\\s*[.)\\-]))`, "giu");
-  let first: { start: number; end: number } | null = null;
+  const hits: { start: number; end: number }[] = [];
+  const lineStarts: { start: number; end: number }[] = [];
   for (const m of layout.text.matchAll(re)) {
     if (m.index < from) continue;
     const start = m.index + m[0].indexOf(m[1]);
     const hit = { start, end: start + m[1].length };
+    hits.push(hit);
     const piece = pieceAt(layout, start);
-    // Parçanın başındaysa (önünde yalnızca boşluk) büyük ihtimalle soru numarasıdır
-    if (piece && !piece.text.slice(0, start - piece.start).trim()) {
-      if (isLineStart(layout, piece)) return hit;
-      first ??= hit;
-    } else first ??= hit;
+    // Parçanın ve satırın başındaysa (önünde yalnızca boşluk) büyük ihtimalle soru numarasıdır
+    if (piece && !piece.text.slice(0, start - piece.start).trim() && isLineStart(layout, piece)) lineStarts.push(hit);
   }
-  return first;
+  const best = lineStarts.length ? lineStarts : hits;
+  if (occurrence && occurrence > 1) return best[occurrence - 1] ?? best.at(-1) ?? null;
+  return best[0] ?? null;
 }
 
 /**
@@ -63,12 +67,22 @@ function cutAtBreak(layout: PageLayout, from: number, to: number, gapLines: numb
   return to;
 }
 
-/** Bölüm başlığının metindeki yeri (büyük/küçük harf ve boşluk farkı yok sayılır); yoksa 0. */
+/**
+ * Bölüm başlığının bittiği yer; bulunamazsa null. Büyük/küçük harf ve kelimeler arasındaki
+ * işaretler yok sayılır ("Test 10" = "TEST – 10" = "TEST-10"), iki kelimelik başlık ters
+ * sırada da aranır ("10. Test"). Sayılar tam eşleşir ("Test 1" "Test 10"u bulmaz).
+ */
 function sectionStart(layout: PageLayout, section?: string | null) {
-  const words = section?.trim().split(/\s+/).filter(Boolean);
-  if (!words?.length) return 0;
-  const m = new RegExp(words.map(escapeRe).join("\\s*"), "iu").exec(layout.text);
-  return m ? m.index + m[0].length : 0;
+  const words = section?.match(/[\p{L}\p{N}]+/gu);
+  if (!words?.length) return null;
+  const word = (w: string) => (/^\p{N}+$/u.test(w) ? `${w}(?!\\p{N})` : escapeRe(w));
+  for (const order of [words, words.length === 2 ? [words[1], words[0]] : null]) {
+    if (!order) continue;
+    const re = new RegExp(`(?<![\\p{L}\\p{N}])${order.map(word).join("[^\\p{L}\\p{N}]*")}`, "iu");
+    const m = re.exec(layout.text);
+    if (m) return m.index + m[0].length;
+  }
+  return null;
 }
 
 /** Parçanın solunda aynı satırda başka parça yoksa satır başıdır. */
@@ -132,14 +146,23 @@ function findOption(layout: PageLayout, from: number, to: number, letter: string
  */
 export function locateQuestion(
   layout: PageLayout,
-  q: { number: string; section?: string | null; correct: string; correctText: string },
+  q: {
+    number: string;
+    section?: string | null;
+    occurrence?: number | null;
+    correct: string;
+    correctText: string;
+  },
   noteSize: number,
   aspect: number,
 ): QuestionSpot | null {
   const number = q.number.replace(/[^\p{L}\p{N}]/gu, "");
   if (!number) return null;
-  // Numaralar tekrar ediyorsa (Test 1, Test 2) bölüm başlığından sonra aranır
-  const head = findQuestion(layout, number, sectionStart(layout, q.section));
+  // Numaralar tekrar ediyorsa (Test 1, Test 2) bölüm başlığından sonra aranır; başlık metinde
+  // yoksa (resim olabilir) modelin verdiği sıra kullanılır
+  const from = sectionStart(layout, q.section);
+  const head =
+    (from !== null && findQuestion(layout, number, from)) || findQuestion(layout, number, 0, q.occurrence);
   if (!head) return null;
   const nextNumber = /^\d+$/.test(number) ? String(+number + 1) : null;
   const next = nextNumber ? findQuestion(layout, nextNumber, head.end) : null;

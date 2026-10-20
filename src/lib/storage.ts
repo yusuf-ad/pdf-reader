@@ -14,7 +14,7 @@ const STORE = "kv";
 const MIGRATED = "meta:migrated-from-local-storage";
 
 /** Kitap başına tutulan veriler; anahtar `${tür}:${kitap}` */
-const BOOK_KINDS = ["annotations", "chat-notes", "chat", "progress", "bookmarks", "toc", "profile", "ocr-off", "ai-marks"] as const;
+const BOOK_KINDS = ["annotations", "chat-notes", "chat", "progress", "bookmarks", "toc", "profile", "ocr-off", "ai-marks", "ai-notes"] as const;
 export type BookKind = (typeof BOOK_KINDS)[number];
 
 export const bookKey = (kind: BookKind, book: string) => `${kind}:${book}`;
@@ -191,6 +191,40 @@ export function renameBook(from: string, to: string) {
     if (old === undefined) continue;
     set(bookKey(kind, to), merge(get(bookKey(kind, to)), old));
     set(bookKey(kind, from), undefined);
+  }
+}
+
+type Paged = { page: number | null };
+const shiftPaged = <T extends Paged>(x: T, shift: (p: number) => number) =>
+  x.page == null ? x : { ...x, page: shift(x.page) };
+
+const shiftRecords = (v: unknown, shift: (p: number) => number) =>
+  Object.fromEntries(Object.entries(v as Record<string, Paged>).map(([id, r]) => [id, shiftPaged(r, shift)]));
+
+/** Sayfa numarası içeren kayıtlar: her türün sayfaları nasıl kaydırılır */
+const PAGE_SHIFTS: Partial<Record<BookKind, (value: unknown, shift: (p: number) => number) => unknown>> = {
+  annotations: (v, shift) =>
+    Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([p, items]) => [shift(+p), items])),
+  "chat-notes": (v, shift) => (v as Paged[]).map((n) => shiftPaged(n, shift)),
+  progress: (v, shift) => shift(v as number),
+  bookmarks: (v, shift) => (v as number[]).map(shift),
+  toc: (v, shift) => (v as Paged[]).map((t) => shiftPaged(t, shift)),
+  "ai-marks": shiftRecords,
+  "ai-notes": shiftRecords,
+};
+
+/**
+ * Kitaba `after`. sayfanın arkasına sayfa eklendi: o sayfadan sonraki her şey bir sayfa
+ * kayar ve kitap yeni içerik anahtarına taşınır.
+ */
+export function insertBookPage(from: string, to: string, after: number) {
+  const shift = (p: number) => (p > after ? p + 1 : p);
+  for (const kind of BOOK_KINDS) {
+    const old = get(bookKey(kind, from));
+    if (old === undefined) continue;
+    const move = PAGE_SHIFTS[kind];
+    set(bookKey(kind, from), undefined);
+    set(bookKey(kind, to), move ? move(old, shift) : old);
   }
 }
 

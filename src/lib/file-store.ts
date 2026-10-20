@@ -174,6 +174,27 @@ export async function loadFile(key: string): Promise<File | null> {
   });
 }
 
+/**
+ * Kitabın PDF'i değişti (araya sayfa eklendi): kayıt yeni içerik anahtarına taşınır;
+ * adı, kapağı, kaydedildiği dosya ve tarihleri aynı kalır.
+ */
+export async function replaceBookFile(from: string, to: string, file: File, numPages: number) {
+  const existing = await get(from);
+  const now = Date.now();
+  await put({
+    ...existing,
+    key: to,
+    name: file.name,
+    size: file.size,
+    lastModified: file.lastModified,
+    addedAt: existing?.addedAt ?? now,
+    openedAt: now,
+    numPages,
+    data: file,
+  });
+  if (from !== to) await run("readwrite", (s) => s.delete(from));
+}
+
 export async function getSaveHandle(key: string) {
   return (await get(key))?.saveHandle ?? null;
 }

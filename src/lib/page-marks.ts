@@ -19,7 +19,16 @@ export const markInputSchema = z.object({
         section: z
           .string()
           .nullable()
-          .describe("Sayfada numaralar tekrar ediyorsa (Test 1, Test 2…) sorunun bulunduğu bölümün başlığı, metinde yazdığı gibi; yoksa null"),
+          .describe(
+            "Sayfada birden fazla test/bölüm varsa sorunun altında bulunduğu başlık, sayfada yazdığı gibi (ör. 'TEST 10'); tek bölüm varsa null",
+          ),
+        occurrence: z
+          .number()
+          .int()
+          .nullable()
+          .describe(
+            "Bu numara sayfada birden fazla soruda geçiyorsa bu soru okuma sırasına göre kaçıncısı (1 = ilk; iki sütunda önce sol sütun yukarıdan aşağı); tek geçiyorsa null",
+          ),
         chosen: z.string().nullable().describe("Kontrolde: kullanıcının işaretlediği şıkkın harfi; bilinmiyorsa null"),
         correct: z.string().describe("Doğru şıkkın harfi, ör. 'C'"),
         correctText: z.string().describe("Doğru şıkkın metni, sayfadan aynen"),

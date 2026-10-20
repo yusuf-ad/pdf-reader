@@ -126,7 +126,9 @@ function untilNextQuestion(context: string) {
 
 function findMark(layout: PageLayout, a: Annotation, page: number, aspect: number): Mark | null {
   if (a.type === "text") {
-    return a.text.trim() ? { page, kind: "kullanıcının sayfaya yazdığı not", marked: a.text.trim(), context: "" } : null;
+    return a.text.trim()
+      ? { page, kind: `kullanıcının sayfaya yazdığı not [not: ${a.id}]`, marked: a.text.trim(), context: "" }
+      : null;
   }
   let pts: [number, number][];
   let rx: number;

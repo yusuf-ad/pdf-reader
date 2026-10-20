@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { HIGHLIGHT_COLORS, INK_COLORS, type Tool } from "@/lib/annotations";
+import type { PaperStyle } from "@/lib/blank-book";
+import { PAPER_STYLES } from "@/lib/paper-styles";
 import {
   BookmarkIcon,
   CropIcon,
@@ -12,6 +14,7 @@ import {
   KeyboardIcon,
   MarkerIcon,
   OcrIcon,
+  PagePlusIcon,
   PanelLeftIcon,
   PanelRightIcon,
   PenIcon,
@@ -34,6 +37,9 @@ type Props = {
   onFitPage: () => void;
   bookmarked: boolean;
   onToggleBookmark: () => void;
+  /** Açık sayfanın arkasına boş sayfa ekler */
+  onInsertPage: (style: PaperStyle) => void;
+  inserting: boolean;
   onSearch: () => void;
   onFocusMode: () => void;
   onHelp: () => void;
@@ -159,6 +165,7 @@ export default function Toolbar(p: Props) {
       <IconButton label="Yer imi  B" active={p.bookmarked} onClick={p.onToggleBookmark}>
         <BookmarkIcon filled={p.bookmarked} />
       </IconButton>
+      <InsertPageMenu page={p.currentPage} busy={p.inserting} onInsert={p.onInsertPage} />
       <IconButton
         label={
           p.saving
@@ -249,6 +256,62 @@ function IconButton({
     >
       {children}
     </button>
+  );
+}
+
+function InsertPageMenu({
+  page,
+  busy,
+  onInsert,
+}: {
+  page: number;
+  busy: boolean;
+  onInsert: (style: PaperStyle) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    const onDown = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onDown);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <IconButton
+        label={busy ? "Sayfa ekleniyor…" : "Bu sayfanın arkasına boş sayfa ekle"}
+        active={open || busy}
+        onClick={() => !busy && setOpen((o) => !o)}
+      >
+        <PagePlusIcon />
+      </IconButton>
+      {open && (
+        <div className="absolute top-full right-0 z-30 mt-1 w-44 border border-rule bg-sheet py-1 text-xs shadow-[0_4px_16px_var(--shadow)]">
+          <p className="px-3 pt-1 pb-1.5 text-muted">{page}. sayfanın arkasına</p>
+          {PAPER_STYLES.map(([id, label]) => (
+            <button
+              key={id}
+              onClick={() => {
+                setOpen(false);
+                onInsert(id);
+              }}
+              className="block w-full px-3 py-1.5 text-left text-ink hover:bg-ink/8"
+            >
+              {label} sayfa
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

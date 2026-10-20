@@ -147,14 +147,14 @@ function drawNote(page: PDFPage, note: Note, font: PDFFont, w: number, h: number
  * açılış parolasıyla şifrelenmiştir; boş parolayla çözülür, kayıt şifresiz olur. Şifre
  * çözülmeden okunursa nesneler bozuk çıkar ("Expected instance of PDFDict…").
  */
-async function loadPdf(bytes: ArrayBuffer) {
+export async function loadPdf(bytes: ArrayBuffer) {
   try {
     const doc = await PDFDocument.load(bytes, { password: "", warnOnInvalidObjects: false });
     dropEncryptionLeftovers(doc);
     return doc;
   } catch (err) {
     if (/password/i.test((err as Error).message)) {
-      throw new Error("Bu PDF açılış parolasıyla korunuyor; notlu kopyası kaydedilemiyor.");
+      throw new Error("Bu PDF açılış parolasıyla korunuyor; üzerinde değişiklik yapılamıyor.");
     }
     throw err;
   }

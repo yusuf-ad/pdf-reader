@@ -74,6 +74,41 @@ export default function PdfViewer({ file, pageWidth, pageHeight, textRenderer, o
 
 // Yakınlaştırma bittikten bu kadar sonra sayfa yeni çözünürlükte yeniden çizilir
 const RERENDER_DELAY = 200;
+// Sayfa ekrana bu kadar yaklaşınca çizilir, bu kadar uzaklaşınca atılır (arada gidip gelince
+// her seferinde yeniden çizilmesin)
+const MOUNT_MARGIN = "1500px 0px";
+const UNMOUNT_MARGIN = "4000px 0px";
+
+// Ekrandan çıkan sayfaların küçük görüntüsü: geri gelince yeni çizim hazır olana kadar
+// beyaz sayfa yerine bu görünür (taranmış sayfaların çizimi saniyeler sürebiliyor)
+const SNAPSHOT_WIDTH = 480;
+const SNAPSHOT_LIMIT = 80;
+const snapshots = new Map<string, string>();
+
+function saveSnapshot(key: string, canvas: HTMLCanvasElement) {
+  if (!canvas.width || !canvas.height) return;
+  const small = document.createElement("canvas");
+  small.width = Math.min(SNAPSHOT_WIDTH, canvas.width);
+  small.height = Math.round((canvas.height * small.width) / canvas.width);
+  small.getContext("2d")?.drawImage(canvas, 0, 0, small.width, small.height);
+  small.toBlob(
+    (blob) => {
+      if (!blob) return;
+      const old = snapshots.get(key);
+      if (old) URL.revokeObjectURL(old);
+      snapshots.delete(key);
+      snapshots.set(key, URL.createObjectURL(blob));
+      // En eski görüntüler atılır
+      while (snapshots.size > SNAPSHOT_LIMIT) {
+        const [first, url] = snapshots.entries().next().value!;
+        snapshots.delete(first);
+        URL.revokeObjectURL(url);
+      }
+    },
+    "image/jpeg",
+    0.7,
+  );
+}
 
 /**
  * Sayfayı yalnızca ekrana yaklaştığında çizer; uzun kitaplarda yüzlerce canvas oluşmasın.
@@ -106,16 +141,38 @@ function LazyPage({
   const [pdfPage, setPdfPage] = useState<PDFPageProxy | null>(null);
   const ocr = useOcr(annotation.bookKey, pdfPage, annotation.ocr && visible);
 
+  const snapshotKey = `${annotation.bookKey}:${pageNumber}`;
+  const keyRef = useRef(snapshotKey);
+  useEffect(() => {
+    keyRef.current = snapshotKey;
+  });
+
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => setVisible(entry.isIntersecting),
-      // Önceden yükleme payı ancak kaydırma kutusu root olursa işe yarar
-      { root: el.closest("[data-scroll-root]"), rootMargin: "1500px 0px" },
+    // Önceden yükleme payı ancak kaydırma kutusu root olursa işe yarar
+    const root = el.closest("[data-scroll-root]");
+    const near = new IntersectionObserver(
+      ([entry]) => entry.isIntersecting && setVisible(true),
+      { root, rootMargin: MOUNT_MARGIN },
     );
-    observer.observe(el);
-    return () => observer.disconnect();
+    const far = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) return;
+        // Canvas atılmadan önce görüntüsü alınır
+        const canvas = el.querySelector<HTMLCanvasElement>("div:not(.invisible) > .react-pdf__Page canvas");
+        if (canvas) saveSnapshot(keyRef.current, canvas);
+        setVisible(false);
+        setShown(null);
+      },
+      { root, rootMargin: UNMOUNT_MARGIN },
+    );
+    near.observe(el);
+    far.observe(el);
+    return () => {
+      near.disconnect();
+      far.disconnect();
+    };
   }, []);
 
   useEffect(() => {
@@ -128,6 +185,8 @@ function LazyPage({
   // Tek bir anahtarlı liste olduğu için hazırlanan katman öne geçerken yeniden oluşturulmaz.
   const layers = shown === null || shown === target ? [target] : [shown, target];
   const frameHeight = aspect ? width * aspect : height;
+  // Henüz çizilmediyse ve önceden alınmış görüntüsü varsa çizim bitene kadar o görünür
+  const snapshot = shown === null ? snapshots.get(snapshotKey) : undefined;
 
   return (
     <figure ref={ref} data-page-number={pageNumber} className="mx-auto">
@@ -135,9 +194,13 @@ function LazyPage({
         style={{ width, height: frameHeight }}
         className="page-frame relative overflow-hidden"
       >
+        {snapshot && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={snapshot} alt="" className="absolute inset-0 h-full w-full [filter:var(--page-filter)]" />
+        )}
         {visible &&
           layers.map((w) => {
-            const pending = w !== shown && shown !== null;
+            const pending = shown === null ? !!snapshot : w !== shown;
             return (
               <div
                 key={w}

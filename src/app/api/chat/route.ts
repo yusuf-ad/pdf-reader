@@ -8,6 +8,7 @@ import {
 } from "@/lib/book-context";
 import { formatMemory, memoryTools, sanitizeMemory } from "@/lib/memory";
 import { markTools } from "@/lib/page-marks";
+import { noteTools } from "@/lib/page-notes";
 import { quizTools } from "@/lib/quiz";
 import { wordTools } from "@/lib/words";
 import {
@@ -49,6 +50,7 @@ const SYSTEM = `Sen bir okuma asistanısın. Kullanıcı bir kitap/PDF okuyor ve
 - Kullanıcı test, quiz ya da soru çözmek isterse createQuiz aracını çağır; soruları okuduğu kitabın verilen metnine (<belge>, <sayfa_metni>, <acik_sayfa>, <secili_metin>) dayandır, soruları ayrıca metin olarak yazma. Kaç soru istediğini söylemediyse 5 soru hazırla. Metin yoksa ya da yetersizse test uydurma, bunu söyle.
 - Kullanıcı kelime/ifadeleri kelime listesine eklemek isterse proposeWords aracını çağır; kelimeleri verilen metne dayandır, geçtiği cümleyi metinden aynen al. Araç hiçbir şeyi kendisi eklemez: öneriler kullanıcıya önizleme olarak gösterilir, kullanıcı seçip onaylar. Listeyi ayrıca metin olarak yazma.
 - Kullanıcı yanlış yaptığı soruların sayfada işaretlenmesini ya da cevaplarının kontrol edilmesini isterse markQuestions aracını çağır; soruları verilen sayfa metninden çöz. Kullanıcının kalemle işaretlediği şıklar sayfa metninde görünmez; sayfa görüntüsü gelmediyse ve kullanıcı işaretlediği cevapları soruyorsa şıklarını yazmasını isteme, "cevaplarımı kontrol et" yazmasını söyle (o zaman sayfa işaretleriyle birlikte görüntü olarak gelir).
+- Kullanıcı bir şeyin (kelimeler, açıklama, özet…) sayfadaki nota eklenmesini ya da sayfaya not yazılmasını isterse writeNote aracını çağır. Sayfadaki yazı notları <isaretler> içinde [not: kimlik] ile gelir: kullanıcı "nota ekle", "metne ekle", "notuma yaz" diyorsa ve sayfada not varsa o notun kimliğini ver (birden çok varsa kullanıcının kastettiğine en uygun olanı, belirsizse açık sayfadaki son notu); not yoksa ya da kullanıcı yeni not isterse noteId null olsun. Notun mevcut biçimine uy: not "1. kelime – anlam" gibi bir listeyse eklediklerini aynı biçimde yaz ve numarayı sürdür. Sohbette az önce verdiğin cevaptan ekleniyorsa onun içeriğini kullan. Eklenecek metni ayrıca cevap olarak tekrar yazma.
 - Kullanıcı hakkında kalıcı bilgiler <hafiza> içinde gelir (varsa). Cevaplarını bunlara göre kişiselleştir (seviye, hedef, tercih edilen uzunluk ve tarz); hafızayı her cevapta anma, yalnızca işe yaradığında kullan. Sonraki sohbetlerde de işe yarayacak yeni bir bilgi öğrenirsen ya da kullanıcı "hatırla"/"unut" derse updateMemory aracını çağır, sonra cevabına devam et.
 - Her cevabın en sonuna, kullanıcının bir sonraki adımda sorabileceği 3 kısa takip sorusu ekle. Sorular bu cevaba ve kitaba özgü olsun, kullanıcının ağzından yazılsın, her biri en fazla 12 kelime. Tam olarak şu biçimde ve cevabın en sonunda:
 ${SUGGESTIONS_OPEN}
@@ -137,6 +139,7 @@ export async function POST(req: Request) {
       ...quizTools,
       ...wordTools,
       ...markTools,
+      ...noteTools,
       ...(memory ? memoryTools(memory) : {}),
       web_search: openai.tools.webSearch({ searchContextSize: "medium" }),
     },
@@ -154,6 +157,7 @@ export async function POST(req: Request) {
       hasToolCall("createQuiz"),
       hasToolCall("proposeWords"),
       hasToolCall("markQuestions"),
+      hasToolCall("writeNote"),
     ],
     abortSignal: req.signal,
   });

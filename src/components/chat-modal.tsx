@@ -71,6 +71,7 @@ import {
 import Quiz from "./quiz";
 import type { MarkInput } from "@/lib/page-marks";
 import { MarkCard } from "./ai-marker";
+import { NoteCard } from "./note-writer";
 import WordProposal from "./word-proposal";
 
 const MAX_IMAGES = 4;
@@ -1038,6 +1039,22 @@ const Message = memo(function Message({
                 book={book}
                 error={p.state === "output-error" ? p.errorText : undefined}
                 onRun={onMark}
+                onGoTo={onGoTo}
+              />
+            </div>
+          ) : p.type === "tool-writeNote" ? (
+            // Sayfadaki nota ekleme: akış sırasında geldiyse not kendiliğinden yazılır
+            <div key={p.toolCallId} className={body ? "mt-3" : ""}>
+              <NoteCard
+                id={p.toolCallId}
+                input={p.input}
+                ready={
+                  p.state === "input-available" ||
+                  p.state === "output-available"
+                }
+                streaming={streaming}
+                book={book}
+                error={p.state === "output-error" ? p.errorText : undefined}
                 onGoTo={onGoTo}
               />
             </div>

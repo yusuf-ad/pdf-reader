@@ -73,8 +73,11 @@ export async function deleteBookOcr(book: string) {
   await idb("readwrite", (s) => s.delete(bookRange(book))).catch(() => {});
 }
 
-/** Kitabın anahtarı değişince tanınmış sayfaları yeni anahtara taşır. */
-export async function renameBookOcr(from: string, to: string) {
+/**
+ * Kitabın anahtarı değişince tanınmış sayfaları yeni anahtara taşır. Araya sayfa eklendiyse
+ * `movePage` sayfa numaralarını kaydırır.
+ */
+export async function renameBookOcr(from: string, to: string, movePage = (page: number) => page) {
   const d = await db();
   const tx = d.transaction(STORE, "readwrite");
   const store = tx.objectStore(STORE);
@@ -82,8 +85,8 @@ export async function renameBookOcr(from: string, to: string) {
   req.onsuccess = () => {
     const cursor = req.result;
     if (!cursor) return;
-    const page = String(cursor.key).slice(from.length + 1);
-    store.put(cursor.value, `${to}#${page}`);
+    const page = Number(String(cursor.key).slice(from.length + 1));
+    store.put(cursor.value, pageKey(to, movePage(page)));
     cursor.delete();
     cursor.continue();
   };

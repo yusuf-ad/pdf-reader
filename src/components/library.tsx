@@ -2,6 +2,8 @@
 
 import { useMemo, useRef, useState } from "react";
 import { downloadBackup, restoreBackup } from "@/lib/backup";
+import type { PaperStyle } from "@/lib/blank-book";
+import { PAPER_STYLES } from "@/lib/paper-styles";
 import type { Book } from "@/lib/file-store";
 import { loadProgress } from "@/lib/reading-state";
 
@@ -15,15 +17,18 @@ type Props = {
   onOpen: (key: string) => void;
   onRemove: (key: string) => void;
   onAdd: () => void;
+  /** Not almak için boş defter oluşturup açar */
+  onCreateBlank: (title: string, pages: number, style: PaperStyle) => Promise<void>;
   /** Bir kitap açıksa okumaya dönüş */
   onClose?: () => void;
 };
 
 const title = (b: Book) => b.name.replace(/\.pdf$/i, "").replace(/[_]+/g, " ");
 
-export default function Library({ books, currentKey, adding, onOpen, onRemove, onAdd, onClose }: Props) {
+export default function Library({ books, currentKey, adding, onOpen, onRemove, onAdd, onCreateBlank, onClose }: Props) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>("recent");
+  const [blankOpen, setBlankOpen] = useState(false);
 
   const items = useMemo(() => {
     const q = query.trim().toLocaleLowerCase("tr");
@@ -53,6 +58,15 @@ export default function Library({ books, currentKey, adding, onOpen, onRemove, o
           PDF aç
         </button>
         <p className="mt-3 text-xs text-muted">ya da dosyaları buraya sürükle</p>
+        <div className="mt-6 text-sm">
+          {blankOpen ? (
+            <BlankBookForm onCreate={onCreateBlank} onCancel={() => setBlankOpen(false)} />
+          ) : (
+            <button onClick={() => setBlankOpen(true)} className="text-muted hover:text-ink">
+              ya da boş bir defter oluştur
+            </button>
+          )}
+        </div>
         <div className="mt-12 border-t border-rule pt-4 text-xs text-muted">
           Başka bir tarayıcıdan ya da cihazdan mı geliyorsun? <BackupButtons />
         </div>
@@ -99,6 +113,12 @@ export default function Library({ books, currentKey, adding, onOpen, onRemove, o
         >
           Kitap ekle
         </button>
+        <button
+          onClick={() => setBlankOpen((o) => !o)}
+          className={`border px-3 py-1.5 text-sm transition-colors ${blankOpen ? "border-ink text-ink" : "border-rule text-muted hover:border-ink hover:text-ink"}`}
+        >
+          Boş defter
+        </button>
         <BackupButtons />
         {onClose && (
           <button onClick={onClose} className="text-sm text-muted hover:text-ink">
@@ -106,6 +126,12 @@ export default function Library({ books, currentKey, adding, onOpen, onRemove, o
           </button>
         )}
       </header>
+
+      {blankOpen && (
+        <div className="mt-6 border-t border-rule pt-4 text-sm">
+          <BlankBookForm onCreate={onCreateBlank} onCancel={() => setBlankOpen(false)} />
+        </div>
+      )}
 
       {items.length === 0 ? (
         <p className="mt-16 text-sm text-muted">“{query}” ile eşleşen kitap yok.</p>
@@ -166,6 +192,81 @@ export default function Library({ books, currentKey, adding, onOpen, onRemove, o
         </ul>
       )}
     </div>
+  );
+}
+
+/** Boş defterin adını, sayfa sayısını ve kâğıt türünü sorar. */
+function BlankBookForm({
+  onCreate,
+  onCancel,
+}: {
+  onCreate: Props["onCreateBlank"];
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [pages, setPages] = useState(50);
+  const [style, setStyle] = useState<PaperStyle>("lined");
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <form
+      className="flex flex-wrap items-end gap-x-6 gap-y-3"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (busy) return;
+        setBusy(true);
+        try {
+          await onCreate(name.trim() || "Defter", Math.min(500, Math.max(1, pages || 1)), style);
+        } finally {
+          setBusy(false);
+        }
+      }}
+      onKeyDown={(e) => e.key === "Escape" && (e.stopPropagation(), onCancel())}
+    >
+      <label className="flex flex-col gap-1">
+        <span className="text-xs text-muted">Ad</span>
+        <input
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Defter"
+          className="w-56 border-b border-rule bg-transparent py-1.5 outline-none placeholder:text-muted focus:border-ink"
+        />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className="text-xs text-muted">Sayfa</span>
+        <input
+          type="number"
+          min={1}
+          max={500}
+          value={pages}
+          onChange={(e) => setPages(e.target.valueAsNumber)}
+          className="w-20 border-b border-rule bg-transparent py-1.5 tabular-nums outline-none focus:border-ink"
+        />
+      </label>
+      <div className="flex gap-3 pb-1.5">
+        {PAPER_STYLES.map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setStyle(id)}
+            className={style === id ? "text-ink underline underline-offset-4" : "text-muted hover:text-ink"}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <button
+        type="submit"
+        disabled={busy}
+        className="border border-ink px-3 py-1.5 transition-colors hover:bg-ink hover:text-sheet disabled:opacity-50"
+      >
+        {busy ? "Oluşturuluyor…" : "Oluştur"}
+      </button>
+      <button type="button" onClick={onCancel} className="pb-1.5 text-muted hover:text-ink">
+        Vazgeç
+      </button>
+    </form>
   );
 }
 

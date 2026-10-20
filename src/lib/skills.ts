@@ -81,6 +81,8 @@ export function parseWordsRequest(
 ): { from: number; to: number } | null {
   const text = input.toLocaleLowerCase("tr");
   if (!numPages || !/kelime/u.test(text) || !/(ekle|kaydet)/u.test(text)) return null;
+  // "kelimeleri nota / metne ekle": kelime listesi değil, sayfadaki not (writeNote)
+  if (/(^|\s)(not|metn|metin)/u.test(text)) return null;
   return parseRange(text, numPages, currentPage);
 }
 
@@ -98,8 +100,10 @@ export function parseMarkRequest(
   if (!numPages || !/yanlış/u.test(text) || !/işaret/u.test(text)) return null;
   const pageRef = /(?:s\.|sayfa)\s*(\d+)|(\d+)\.?\s*sayfa/u;
   const single = text.match(pageRef);
-  // Sayfa numarası çıkarıldıktan sonra soru numarası kalmalı
-  if (!/\d/.test(text.replace(pageRef, ""))) return null;
+  // Sayfa ve test numarası ("test 10", "10. test") çıkarıldıktan sonra soru numarası kalmalı;
+  // "test 10'daki yanlışlarımı işaretle" kontrol isteğidir
+  const rest = text.replace(pageRef, "").replace(/(?:test|deneme|bölüm)\s*-?\s*\d+|\d+\s*\.?\s*(?:test|deneme|bölüm)/gu, "");
+  if (!/\d/.test(rest)) return null;
   const page = single ? Math.min(numPages, Math.max(1, +(single[1] ?? single[2]))) : currentPage;
   return { page };
 }
@@ -171,6 +175,10 @@ export const formatPages = (pages: SkillRequest["pages"]) =>
   pages.map((p) => `[s. ${p.page}]\n${p.text}`).join("\n\n");
 
 /** Skill'in modele gidecek talimatı. */
+// Sayfada aynı numara birden çok testte geçebilir; istemci soruyu bunlarla ayırt eder
+const SECTION_RULE =
+  "section: sayfada birden fazla test/bölüm başlığı varsa sorunun altında bulunduğu başlık, sayfada yazdığı gibi (ör. \"TEST 10\"); tek bölüm varsa null. occurrence: aynı numara sayfada birden fazla soruda geçiyorsa bu soru okuma sırasına göre kaçıncısı (1 = ilk; iki sütunda önce sol sütun yukarıdan aşağı); tek geçiyorsa null.";
+
 export function skillPrompt(s: SkillRequest, body: string, partial: boolean) {
   const where = [s.fileName, s.from === s.to ? `sayfa ${s.from}` : `sayfa ${s.from}–${s.to}`]
     .filter(Boolean)
@@ -199,16 +207,18 @@ export function skillPrompt(s: SkillRequest, body: string, partial: boolean) {
 - Kullanıcının isteği: "${(s.request ?? "").slice(0, 500)}"
 - Yalnızca kullanıcının söylediği numaraları al. Metinde bulamadığın numarayı atla.
 - Her soruyu dikkatle çöz. Sayfada cevap anahtarı varsa onu esas al.
-- checked ve chosen: null. number: soru numarası, metinde yazdığı gibi (ör. "12"). section: sayfada numaralar tekrar ediyorsa (Test 1, Test 2…) sorunun altında bulunduğu başlık, metinde yazdığı gibi; yoksa null. correct: doğru şıkkın harfi (ör. "C"). correctText: o şıkkın metni, metinden aynen kopyalanmış.
+- Sayfada birden fazla test/bölüm varsa (ör. TEST 9'un sonu ve TEST 10) ve kullanıcı birini söylediyse ("test 10") numaraları o testte ara.
+- checked ve chosen: null. number: soru numarası, metinde yazdığı gibi (ör. "12"). ${SECTION_RULE} correct: doğru şıkkın harfi (ör. "C"). correctText: o şıkkın metni, metinden aynen kopyalanmış.
 - note: sayfaya yazılacak kısa Türkçe not, en fazla 2 kısa cümle: neden o şık doğru, varsa tuzak neydi. Şıkkı tekrar yazma, "Doğru: C" gibi bir başlangıç da ekleme (o ayrıca yazılır).`
       : s.name === "kontrol"
       ? `Kullanıcı bu sayfadaki soruları çözdü ve seçtiği şıkları sayfada işaretledi. Cevaplarını kontrol et ve yanlış yaptıklarını markQuestions aracıyla ver.
 - Kullanıcının isteği: "${(s.request ?? "").slice(0, 500)}"
 - Ekteki görsel, kullanıcının işaretleriyle birlikte sayfanın kendisidir. Her soruda kullanıcının hangi şıkkı seçtiğini görselden oku: daire içine alma, tik, çarpı, altını çizme, fosforlu kalem ya da vurgu olabilir. Sayfa metni (aşağıda) yazıyı doğru okuman için.
+- Sayfada birden fazla test/bölüm varsa (ör. TEST 9'un sonu ve TEST 10) ve kullanıcı birini söylediyse ("test 10'u kontrol et") YALNIZCA o testin sorularını kontrol et; diğerlerini checked'a da sayma.
 - Hiçbir şıkkı işaretlenmemiş soruyu atla. Bir soruda seçim belirsizse (iki şık işaretli gibi) en belirgin olanı al.
 - Doğru cevabı bul: sayfada ya da metinde cevap anahtarı varsa onu esas al, yoksa soruyu dikkatle kendin çöz.
 - checked: şık işaretlenmiş soru sayısı. questions: YALNIZCA kullanıcının yanlış yaptığı sorular; hepsi doğruysa boş liste.
-- number: soru numarası, metinde yazdığı gibi. section: sayfada numaralar tekrar ediyorsa (Test 1, Test 2…) sorunun altında bulunduğu başlık, metinde yazdığı gibi; yoksa null. chosen: kullanıcının seçtiği şıkkın harfi. correct: doğru şıkkın harfi. correctText: doğru şıkkın metni, metinden aynen kopyalanmış.
+- number: soru numarası, metinde yazdığı gibi. ${SECTION_RULE} chosen: kullanıcının seçtiği şıkkın harfi. correct: doğru şıkkın harfi. correctText: doğru şıkkın metni, metinden aynen kopyalanmış.
 - note: sayfaya yazılacak kısa Türkçe not, en fazla 2 kısa cümle: neden doğru şık doğru, kullanıcının seçtiği neden yanlış. "Doğru: C" gibi bir başlangıç ekleme (o ayrıca yazılır).
 - Görselde hiçbir işaretli şık göremiyorsan checked 0, questions boş olsun.`
       : s.name === "sayfa"
