@@ -85,11 +85,19 @@ export async function POST(req: Request) {
       // Önceki cevaplardaki öneri listeleri modele geri gönderilmez
       // Önceki web aramaları da geri gönderilmez; cevap metni yeterli
       // Hafıza değişiklikleri de gönderilmez; güncel hafıza sistem mesajında
+      // Önceki düşünme (reasoning) parçaları da gönderilmez: OpenAI'daki kimlikleriyle gidiyorlar
+      // ve hatayla yarıda kalan cevabınki orada hiç kaydedilmediği için "Item not found" veriyordu
       if (m.role === "assistant") {
         return {
           ...m,
           parts: m.parts
-            .filter((p) => !isWebSearchPart(p) && p.type !== "source-url" && p.type !== "tool-updateMemory")
+            .filter(
+              (p) =>
+                !isWebSearchPart(p) &&
+                p.type !== "source-url" &&
+                p.type !== "tool-updateMemory" &&
+                p.type !== "reasoning",
+            )
             .map((p) =>
               p.type === "text"
                 ? { ...p, text: splitSuggestions(p.text).body }
@@ -159,6 +167,9 @@ export async function POST(req: Request) {
       hasToolCall("markQuestions"),
       hasToolCall("writeNote"),
     ],
+    // Geçmiş mesajlar OpenAI'da saklanan kimlikle değil içerikle gönderilir; yarıda kalan
+    // ya da süresi dolan kayıtlar sonraki mesajı bozmasın
+    providerOptions: { openai: { store: false } },
     abortSignal: req.signal,
   });
 

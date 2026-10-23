@@ -368,6 +368,7 @@ function NoteView({
           e.preventDefault();
         }
       }}
+      onInput={(e) => renumberLists(e.currentTarget)}
       onPointerDown={(e) => {
         if (!draggable || e.button !== 0) return;
         e.preventDefault();
@@ -461,4 +462,82 @@ function continueList(el: HTMLElement) {
   // execCommand geri alma (Ctrl Z) geçmişini korur
   document.execCommand("insertText", false, `\n${indent}${next}${space}`);
   return true;
+}
+
+let renumbering = false;
+
+/**
+ * Numaralı listeleri sıraya sokar: "1 2 3 4"ten 3 silinince 4 → 3 olur, araya madde
+ * eklenince alttakiler kayar. Aynı girinti ve noktalamayla ardışık satırlar bir liste;
+ * ilk maddenin numarası korunur, daha içerideki satırlar listeyi bölmez.
+ */
+function renumberLists(el: HTMLElement) {
+  if (renumbering) return;
+  const text = el.textContent ?? "";
+  const fixes: { start: number; end: number; value: string }[] = [];
+  const runs = new Map<number, { punct: string; next: number }>();
+  let pos = 0;
+  for (const line of text.split("\n")) {
+    const m = line.match(LIST_ITEM);
+    const depth = line.length - line.trimStart().length;
+    for (const d of runs.keys()) if (d > depth || (!m?.[2] && !m?.[4] && d === depth)) runs.delete(d);
+    const num = m && (m[2] ?? m[4]);
+    if (num) {
+      const punct = m[3] ?? "";
+      const run = runs.get(depth);
+      if (run && run.punct === punct) {
+        if (+num !== run.next) {
+          fixes.push({ start: pos + depth, end: pos + depth + num.length, value: String(run.next) });
+        }
+        run.next++;
+      } else runs.set(depth, { punct, next: +num + 1 });
+    }
+    pos += line.length + 1;
+  }
+  if (!fixes.length) return;
+
+  const sel = window.getSelection();
+  let caret = -1;
+  if (sel?.rangeCount && el.contains(sel.anchorNode)) {
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    r.setEnd(sel.anchorNode!, sel.anchorOffset);
+    caret = r.toString().length;
+  }
+  renumbering = true;
+  try {
+    // Sondan başa: öndeki konumlar kaymasın
+    for (const f of fixes.reverse()) {
+      const r = document.createRange();
+      r.setStart(...textPoint(el, f.start));
+      r.setEnd(...textPoint(el, f.end));
+      sel?.removeAllRanges();
+      sel?.addRange(r);
+      // execCommand geri alma geçmişini korur
+      document.execCommand("insertText", false, f.value);
+      if (caret >= f.end) caret += f.value.length - (f.end - f.start);
+    }
+  } finally {
+    renumbering = false;
+  }
+  if (caret >= 0 && sel) {
+    const r = document.createRange();
+    r.setStart(...textPoint(el, caret));
+    sel.removeAllRanges();
+    sel.addRange(r);
+  }
+}
+
+/** Metin içi karakter konumunu DOM noktasına çevirir */
+function textPoint(el: HTMLElement, offset: number): [Node, number] {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let node: Node | null;
+  let last: Node | null = null;
+  while ((node = walker.nextNode())) {
+    const len = node.textContent?.length ?? 0;
+    if (offset <= len) return [node, offset];
+    offset -= len;
+    last = node;
+  }
+  return last ? [last, last.textContent?.length ?? 0] : [el, el.childNodes.length];
 }

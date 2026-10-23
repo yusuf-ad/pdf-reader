@@ -755,7 +755,9 @@ export default function Reader() {
       }
       if (mod && e.key.toLowerCase() === "f" && file) {
         e.preventDefault();
-        openSearch();
+        // Arama paneli zaten açıksa kapat
+        if (leftOpen && leftTab === "search") setLeftOpen(false);
+        else openSearch();
         return;
       }
       if (mod && (e.key === "+" || e.key === "=")) {
@@ -826,6 +828,8 @@ export default function Reader() {
     chatOpen,
     questionDraft,
     libraryOpen,
+    leftOpen,
+    leftTab,
     goTo,
     zoomBy,
     fitWidth,
