@@ -111,12 +111,15 @@ export function QuestionDialog({
   onClose,
   onSaved,
   onAsk,
+  onAddToPdf,
 }: {
   draft: Omit<NewQuestion, "folderId" | "note">;
   onClose: () => void;
   onSaved: () => void;
   /** Kaydetmeden sohbete sor */
   onAsk: () => void;
+  /** Soru olarak kaydetmeden açık sayfaya görsel olarak ekle (PDF açıkken) */
+  onAddToPdf?: () => void;
 }) {
   const [folderId, setFolderId] = useState<string | null>(getLastFolder);
   const [note, setNote] = useState("");
@@ -185,6 +188,16 @@ export function QuestionDialog({
           <button type="button" onClick={onClose} className="px-3 py-1.5 text-muted hover:text-ink">
             Vazgeç
           </button>
+          {onAddToPdf && (
+            <button
+              type="button"
+              onClick={onAddToPdf}
+              title="Görseli açık sayfaya yapıştır; taşınabilir, boyutlandırılabilir, kaydedince PDF'e yazılır"
+              className="border border-rule px-3 py-1.5 transition-colors hover:border-ink"
+            >
+              PDF&apos;e ekle
+            </button>
+          )}
           <button
             type="button"
             onClick={onAsk}

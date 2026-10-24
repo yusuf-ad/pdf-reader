@@ -45,6 +45,18 @@ export type Highlight = {
   createdAt: number;
 };
 
+/** Sayfaya yapıştırılan görsel (ekran görüntüsü); PNG ya da JPEG data URL. */
+export type Picture = {
+  id: string;
+  type: "image";
+  src: string;
+  /** Sol üst köşe, genişlik, yükseklik (sayfaya oranla) */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 export const HIGHLIGHT_COLORS = [
   { color: "#f5c518", label: "Sarı" },
   { color: "#7bc96f", label: "Yeşil" },
@@ -52,7 +64,7 @@ export const HIGHLIGHT_COLORS = [
   { color: "#f27aa6", label: "Pembe" },
 ] as const;
 
-export type Annotation = Stroke | Note | Highlight;
+export type Annotation = Stroke | Note | Highlight | Picture;
 
 type BookAnnotations = Record<number, Annotation[]>;
 
@@ -126,6 +138,39 @@ export function updateNote(book: string, page: number, id: string, patch: Partia
     page,
     current(book, page).map((a) => (a.id === id && a.type === "text" ? { ...a, ...patch } : a)),
   );
+}
+
+export function updatePicture(book: string, page: number, id: string, patch: Partial<Picture>) {
+  write(
+    book,
+    page,
+    current(book, page).map((a) => (a.id === id && a.type === "image" ? { ...a, ...patch } : a)),
+  );
+}
+
+// Bundan büyük görseller küçültülür (yazılar okunur kalsın, kayıt şişmesin)
+const PICTURE_MAX_SIDE = 1600;
+// PNG bundan büyükse (fotoğraf gibi) JPEG'e çevrilir
+const PICTURE_PNG_LIMIT = 1_500_000;
+
+/** Görseli PNG/JPEG data URL'sine çevirir (PDF'e yalnızca bu ikisi gömülebilir). */
+export async function pictureFromBlob(blob: Blob) {
+  const bitmap = await createImageBitmap(blob);
+  const ratio = Math.min(1, PICTURE_MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(bitmap.width * ratio));
+  canvas.height = Math.max(1, Math.round(bitmap.height * ratio));
+  const ctx = canvas.getContext("2d")!;
+  // Saydam yerler JPEG'de siyah çıkmasın: sayfa gibi beyaz
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  let src = canvas.toDataURL("image/png");
+  if (src.length > PICTURE_PNG_LIMIT) src = canvas.toDataURL("image/jpeg", 0.9);
+  const size = { width: canvas.width, height: canvas.height };
+  canvas.width = canvas.height = 0; // belleği hemen bırak
+  return { src, ...size };
 }
 
 export function removeAnnotations(book: string, page: number, ids: string[]) {

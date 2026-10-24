@@ -23,7 +23,7 @@ const SHORTCUTS: [string, string][] = [
   ["Shift + sürükle", "Fosforlu kalemle düz çizgi"],
   ["Sağ tık basılı", "Kalem / yazı açıkken geçici silgi"],
   ["Q", "Yapamadığım soruyu sayfadan kırp (Enter: kaydet, Ctrl K: sohbete sor)"],
-  ["Ctrl + V", "Ekran görüntüsünü yapamadığım soru olarak ekle"],
+  ["Ctrl + V", "Ekran görüntüsünü yapamadığım soru olarak ya da PDF'e ekle"],
   ["Ctrl + Z", "Son çizimi / yazıyı / vurguyu geri al"],
   ["Ctrl + S", "Notları PDF'e yazıp kaydet (son kaydedilen dosyaya)"],
   ["Ctrl + Shift + S", "Farklı kaydet (yeni yer seç)"],

@@ -11,6 +11,7 @@ import {
   ExpandIcon,
   FitPageIcon,
   FitWidthIcon,
+  ImageIcon,
   KeyboardIcon,
   MarkerIcon,
   OcrIcon,
@@ -40,6 +41,8 @@ type Props = {
   /** Açık sayfanın arkasına boş sayfa ekler */
   onInsertPage: (style: PaperStyle) => void;
   inserting: boolean;
+  /** Açık sayfaya görsel (ekran görüntüsü) ekler */
+  onAddImage: () => void;
   onSearch: () => void;
   onFocusMode: () => void;
   onHelp: () => void;
@@ -166,6 +169,9 @@ export default function Toolbar(p: Props) {
         <BookmarkIcon filled={p.bookmarked} />
       </IconButton>
       <InsertPageMenu page={p.currentPage} busy={p.inserting} onInsert={p.onInsertPage} />
+      <IconButton label="Bu sayfaya görsel ekle" onClick={p.onAddImage}>
+        <ImageIcon />
+      </IconButton>
       <IconButton
         label={
           p.saving

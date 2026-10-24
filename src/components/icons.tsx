@@ -53,6 +53,14 @@ export const PagePlusIcon = () => (
   </Icon>
 );
 
+export const ImageIcon = () => (
+  <Icon>
+    <rect x="3" y="4" width="18" height="16" />
+    <circle cx="9" cy="10" r="1.5" />
+    <path d="m21 16-5-5-9 9" />
+  </Icon>
+);
+
 export const FitWidthIcon = () => (
   <Icon>
     <path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4" />

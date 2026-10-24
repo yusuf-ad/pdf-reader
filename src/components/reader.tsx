@@ -22,6 +22,7 @@ import {
   HIGHLIGHT_COLORS,
   INK_COLORS,
   newId,
+  pictureFromBlob,
   shiftHistory,
   undo,
   type Tool,
@@ -118,6 +119,7 @@ export default function Reader() {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const pageInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -674,6 +676,43 @@ export default function Reader() {
     [key, file],
   );
 
+  /** Görseli açık sayfanın ekranda görünen kısmının ortasına yapıştırır. */
+  const addPagePicture = useCallback(
+    async (image: Blob) => {
+      if (!key) return;
+      const page = currentPage;
+      const frame = scrollRef.current?.querySelector<HTMLElement>(`figure[data-page-number="${page}"] .page-frame`);
+      if (!frame) return;
+      let picture;
+      try {
+        picture = await pictureFromBlob(image);
+      } catch {
+        alert("Görsel okunamadı.");
+        return;
+      }
+      setTool(null);
+      setCropping(false);
+      const box = frame.getBoundingClientRect();
+      const view = scrollRef.current!.getBoundingClientRect();
+      // Ekran görüntüsü ekrandaki boyutunda, en fazla sayfanın %60'ı genişliğinde
+      const width = Math.min(picture.width / devicePixelRatio, box.width * 0.6);
+      const height = (width * picture.height) / picture.width;
+      const visibleTop = Math.max(box.top, view.top);
+      const visibleBottom = Math.min(box.bottom, view.bottom);
+      const top = Math.max(visibleTop + 16, (visibleTop + visibleBottom - height) / 2) - box.top;
+      addAnnotation(key, page, {
+        id: newId(),
+        type: "image",
+        src: picture.src,
+        x: (box.width - width) / 2 / box.width,
+        y: Math.min(Math.max(0, top), box.height - height) / box.height,
+        width: width / box.width,
+        height: height / box.height,
+      });
+    },
+    [key, currentPage],
+  );
+
   // Ctrl V: panodaki ekran görüntüsü
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
@@ -970,6 +1009,17 @@ export default function Reader() {
             e.target.value = "";
           }}
         />
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const image = e.target.files?.[0];
+            if (image) addPagePicture(image);
+            e.target.value = "";
+          }}
+        />
 
         {file && showPanels && (
           <Toolbar
@@ -987,6 +1037,7 @@ export default function Reader() {
             onToggleBookmark={() => key && toggleBookmark(key, currentPage)}
             onInsertPage={insertPage}
             inserting={inserting}
+            onAddImage={() => imageInputRef.current?.click()}
             onSearch={openSearch}
             onFocusMode={toggleFocusMode}
             onHelp={() => setShowHelp(true)}
@@ -1164,6 +1215,14 @@ export default function Reader() {
         <QuestionDialog
           draft={questionDraft}
           onAsk={() => askImage(questionDraft.image)}
+          onAddToPdf={
+            file
+              ? () => {
+                  addPagePicture(questionDraft.image);
+                  setQuestionDraft(null);
+                }
+              : undefined
+          }
           onClose={() => setQuestionDraft(null)}
           onSaved={() => {
             setQuestionDraft(null);

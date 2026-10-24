@@ -9,8 +9,10 @@ import {
   strokeHit,
   strokePath,
   updateNote,
+  updatePicture,
   usePageAnnotations,
   type Note,
+  type Picture,
   type Tool,
 } from "@/lib/annotations";
 
@@ -22,6 +24,8 @@ const MARKER_WIDTH = 0.016;
 const ERASER_RADIUS = 8;
 // Bu kadar px'ten yakın noktalar atlanır (kayıt küçük kalsın)
 const MIN_POINT_GAP = 1.5;
+// Görsel bundan küçük boyutlandırılamaz (px)
+const MIN_PICTURE_SIZE = 24;
 
 const ERASER_CURSOR = `url("data:image/svg+xml,${encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18"><circle cx="9" cy="9" r="7.5" fill="white" fill-opacity=".6" stroke="black"/></svg>`,
@@ -52,18 +56,20 @@ export default function AnnotationLayer({ book, page, width: w, height: h, tool,
   const [editingId, setEditing] = useState<string | null>(null);
   // Başka bir araca geçince düzenleme biter (araçsızken menüden düzenlenebilir)
   const editing = tool === "text" || !tool ? editingId : null;
-  // Araç seçili değilken tıklanan notun menüsü
+  // Araç seçili değilken tıklanan notun ya da görselin menüsü
   const [menuId, setMenu] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const menuNote = !tool ? items.find((a): a is Note => a.type === "text" && a.id === menuId) : undefined;
+  const menuItem = !tool
+    ? items.find((a): a is Note | Picture => (a.type === "text" || a.type === "image") && a.id === menuId)
+    : undefined;
 
   useEffect(() => {
-    if (!menuNote) return;
+    if (!menuItem) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setMenu(null);
       if (e.key === "Delete" || e.key === "Backspace") {
         setMenu(null);
-        removeAnnotations(book, page, [menuNote.id]);
+        removeAnnotations(book, page, [menuItem.id]);
       }
     };
     const onDown = (e: MouseEvent) => {
@@ -75,7 +81,7 @@ export default function AnnotationLayer({ book, page, width: w, height: h, tool,
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("mousedown", onDown);
     };
-  }, [menuNote, book, page]);
+  }, [menuItem, book, page]);
   // Sağ tık basılı tutulurken geçici silgi
   const [rightErase, setRightErase] = useState(false);
   const active = rightErase ? "eraser" : tool;
@@ -193,6 +199,7 @@ export default function AnnotationLayer({ book, page, width: w, height: h, tool,
   };
 
   const notes = items.filter((a): a is Note => a.type === "text");
+  const pictures = items.filter((a): a is Picture => a.type === "image");
 
   return (
     <>
@@ -214,6 +221,20 @@ export default function AnnotationLayer({ book, page, width: w, height: h, tool,
         // Yazı ve çizgiler de sayfa gibi temaya uyar (koyu temada siyah mürekkep açık görünür)
         className="absolute inset-0 z-10 select-none [filter:var(--page-filter)]"
       >
+        {/* Görseller çizgilerin altında: ekran görüntüsünün üstüne kalemle yazılabilir */}
+        {pictures.map((pic) => (
+          <PictureView
+            key={pic.id}
+            picture={pic}
+            w={w}
+            h={h}
+            tool={active}
+            selected={menuItem?.id === pic.id}
+            onClick={() => !tool && setMenu(pic.id)}
+            onChange={(patch) => updatePicture(book, page, pic.id, patch)}
+          />
+        ))}
+
         <svg width={w} height={h} className="absolute inset-0 overflow-visible" aria-hidden>
           {/* Fosforlu kalem izleri HighlightLayer'da, sayfayla karışarak çizilir */}
           {items.map(
@@ -275,30 +296,37 @@ export default function AnnotationLayer({ book, page, width: w, height: h, tool,
           />
         )}
       </div>
-      {menuNote && (
+      {menuItem && (
         // Katmanın dışında: sayfa filtresi (koyu tema) menünün renklerini bozmasın
         <div
           ref={menuRef}
           onMouseDown={(e) => e.preventDefault()}
           style={{
-            left: Math.min(menuNote.x * w, w - 120),
-            top: menuNote.y < 0.05 ? menuNote.y * h + menuNote.size * w * 1.6 : menuNote.y * h - 34,
+            left: Math.max(0, Math.min(menuItem.x * w, w - 120)),
+            top:
+              menuItem.y >= 0.05
+                ? menuItem.y * h - 34
+                : menuItem.type === "text"
+                  ? menuItem.y * h + menuItem.size * w * 1.6
+                  : (menuItem.y + menuItem.height) * h + 6,
           }}
           className="absolute z-30 flex items-center gap-1.5 border border-rule bg-sheet px-2 py-1.5 text-xs shadow-[0_4px_16px_var(--shadow)]"
         >
+          {menuItem.type === "text" && (
+            <button
+              onClick={() => {
+                setMenu(null);
+                setEditing(menuItem.id);
+              }}
+              className="px-1 text-muted hover:text-ink"
+            >
+              Düzenle
+            </button>
+          )}
           <button
             onClick={() => {
               setMenu(null);
-              setEditing(menuNote.id);
-            }}
-            className="px-1 text-muted hover:text-ink"
-          >
-            Düzenle
-          </button>
-          <button
-            onClick={() => {
-              setMenu(null);
-              removeAnnotations(book, page, [menuNote.id]);
+              removeAnnotations(book, page, [menuItem.id]);
             }}
             className="px-1 text-muted hover:text-accent"
           >
@@ -307,6 +335,108 @@ export default function AnnotationLayer({ book, page, width: w, height: h, tool,
         </div>
       )}
     </>
+  );
+}
+
+/** Yapıştırılan görsel: sürükleyerek taşınır, sağ alt köşeden oranı korunarak boyutlandırılır. */
+function PictureView({
+  picture: p,
+  w,
+  h,
+  tool,
+  selected,
+  onClick,
+  onChange,
+}: {
+  picture: Picture;
+  w: number;
+  h: number;
+  tool: Tool | null;
+  selected: boolean;
+  /** Sürüklemeden tıklanınca */
+  onClick: () => void;
+  onChange: (patch: Partial<Picture>) => void;
+}) {
+  // Sürüklenirken geçici kayma ya da genişlik farkı (px)
+  const [offset, setOffset] = useState<{ dx: number; dy: number; dw: number } | null>(null);
+  const dragRef = useRef<{ x: number; y: number; resize: boolean; moved: boolean } | null>(null);
+  // Kalem ve yazıda tıklamalar geçer (görselin üstüne yazılır); silgide katman siler
+  const interactive = !tool || tool === "eraser";
+  const ratio = (p.height * h) / (p.width * w);
+  const left = p.x * w + (offset?.dx ?? 0);
+  const top = p.y * h + (offset?.dy ?? 0);
+  const width = p.width * w + (offset?.dw ?? 0);
+
+  const start = (e: React.PointerEvent, resize: boolean) => {
+    if (tool || e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = { x: e.clientX, y: e.clientY, resize, moved: false };
+  };
+  const move = (e: React.PointerEvent) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const dx = e.clientX - drag.x;
+    const dy = e.clientY - drag.y;
+    if (!drag.moved && Math.hypot(dx, dy) < 3) return;
+    drag.moved = true;
+    if (drag.resize) {
+      // Köşe hangi yöne daha çok çekildiyse ona göre; oran korunur
+      const dw = Math.abs(dx) > Math.abs(dy) ? dx : dy / ratio;
+      setOffset({ dx: 0, dy: 0, dw: Math.max(MIN_PICTURE_SIZE - p.width * w, dw) });
+    } else setOffset({ dx, dy, dw: 0 });
+  };
+  const end = () => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    if (!drag) return;
+    if (!drag.moved || !offset) {
+      if (!drag.resize) onClick();
+      return;
+    }
+    setOffset(null);
+    if (drag.resize) onChange({ width: width / w, height: (width * ratio) / h });
+    else {
+      // Bir köşesi sayfada kalsın
+      const x = Math.min(0.98, Math.max(0.02 - p.width, left / w));
+      const y = Math.min(0.98, Math.max(0.02 - p.height, top / h));
+      onChange({ x, y });
+    }
+  };
+
+  return (
+    <div
+      // Silgi ve vurgu katmanı notlar gibi bulsun
+      data-note-id={p.id}
+      onPointerDown={(e) => start(e, false)}
+      onPointerMove={move}
+      onPointerUp={end}
+      onPointerCancel={end}
+      title={!tool ? "Taşımak için sürükle; boyutlandırmak ya da silmek için tıkla" : undefined}
+      style={{
+        left,
+        top,
+        width,
+        height: width * ratio,
+        pointerEvents: interactive ? "auto" : "none",
+        cursor: !tool ? "move" : undefined,
+      }}
+      className={`absolute ${selected ? "ring-1 ring-accent" : !tool ? "hover:ring-1 hover:ring-ink/30" : ""}`}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={p.src} alt="" draggable={false} className="h-full w-full" />
+      {selected && (
+        <span
+          onPointerDown={(e) => start(e, true)}
+          onPointerMove={move}
+          onPointerUp={end}
+          onPointerCancel={end}
+          title="Boyutlandır"
+          className="absolute -right-1.5 -bottom-1.5 h-3 w-3 cursor-nwse-resize border border-accent bg-sheet"
+        />
+      )}
+    </div>
   );
 }
 

@@ -1,4 +1,4 @@
-// Notları (kalem, yazı, vurgu) PDF'in içine yazar ve kaydeder. Kitaplıktaki kopya ve
+// Notları (kalem, yazı, vurgu, görsel) PDF'in içine yazar ve kaydeder. Kitaplıktaki kopya ve
 // uygulamadaki notlar olduğu gibi kalır; çıktı ayrı bir dosyadır.
 import fontkit from "@cantoo/fontkit";
 import {
@@ -23,6 +23,7 @@ import {
   setStrokingColor,
   stroke,
   type PDFFont,
+  type PDFImage,
   type PDFPage,
 } from "@cantoo/pdf-lib";
 import { strokePath, type Annotation, type Note, type Stroke } from "./annotations";
@@ -188,6 +189,15 @@ export async function exportAnnotatedPdf(file: File, annotations: Record<number,
   const font = needsFont
     ? await doc.embedFont(await (await fetch(FONT_URL)).arrayBuffer(), { subset: true })
     : null;
+  // Aynı görsel birden çok yere yapıştırıldıysa bir kez gömülür
+  const images = new Map<string, PDFImage>();
+  for (const items of Object.values(annotations)) {
+    for (const a of items) {
+      if (a.type !== "image" || images.has(a.src)) continue;
+      const bytes = await (await fetch(a.src)).arrayBuffer();
+      images.set(a.src, a.src.startsWith("data:image/png") ? await doc.embedPng(bytes) : await doc.embedJpg(bytes));
+    }
+  }
 
   const pages = doc.getPages();
   for (const [num, items] of Object.entries(annotations)) {
@@ -225,6 +235,16 @@ export async function exportAnnotatedPdf(file: File, annotations: Record<number,
         borderLineCap: LineCapStyle.Round,
         blendMode: BlendMode.Multiply,
       });
+      page.pushOperators(popGraphicsState());
+    }
+    // Görseller çizgilerin altında (ekrandaki gibi); y ekseni yine ters çevrilir
+    for (const a of items) {
+      if (a.type !== "image") continue;
+      page.pushOperators(
+        pushGraphicsState(),
+        concatTransformationMatrix(1, 0, 0, -1, a.x * w, (a.y + a.height) * h),
+      );
+      page.drawImage(images.get(a.src)!, { x: 0, y: 0, width: a.width * w, height: a.height * h });
       page.pushOperators(popGraphicsState());
     }
     for (const a of items) if (a.type === "ink" && !a.marker) drawStroke(page, a, w, h);

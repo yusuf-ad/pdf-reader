@@ -45,6 +45,11 @@ export async function renderMarkedPage(
       ctx.strokeStyle = a.color;
       ctx.lineWidth = Math.max(1.5, a.width * w);
       ctx.stroke(new Path2D(strokePath(a.points, w, h)));
+    } else if (a.type === "image") {
+      const img = new Image();
+      img.src = a.src;
+      await img.decode().catch(() => {});
+      if (img.naturalWidth) ctx.drawImage(img, a.x * w, a.y * h, a.width * w, a.height * h);
     } else {
       ctx.fillStyle = a.color;
       const size = a.size * w;

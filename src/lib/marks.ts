@@ -130,6 +130,7 @@ function findMark(layout: PageLayout, a: Annotation, page: number, aspect: numbe
       ? { page, kind: `kullanıcının sayfaya yazdığı not [not: ${a.id}]`, marked: a.text.trim(), context: "" }
       : null;
   }
+  if (a.type === "image") return null; // Yapıştırılan görselin metni yok
   let pts: [number, number][];
   let rx: number;
   if (a.type === "highlight") {

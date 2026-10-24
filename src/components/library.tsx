@@ -29,6 +29,22 @@ export default function Library({ books, currentKey, adding, onOpen, onRemove, o
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>("recent");
   const [blankOpen, setBlankOpen] = useState(false);
+  const [revealing, setRevealing] = useState<{ key: string; text: string } | null>(null);
+
+  /** PDF'in diskteki klasörünü açar; sunucu dosyayı ad ve boyutundan bulur. */
+  const revealBook = async (book: Book) => {
+    setRevealing({ key: book.key, text: "Aranıyor…" });
+    const text = await fetch("/api/reveal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: book.key, name: book.name, size: book.size }),
+    })
+      .then((r) => r.json())
+      .then((r: { found?: boolean }) => (r.found ? "Açıldı" : "Bulunamadı"))
+      .catch(() => "Açılamadı");
+    setRevealing({ key: book.key, text });
+    setTimeout(() => setRevealing((r) => (r?.key === book.key && r.text === text ? null : r)), 2500);
+  };
 
   const items = useMemo(() => {
     const q = query.trim().toLocaleLowerCase("tr");
@@ -181,12 +197,21 @@ export default function Library({ books, currentKey, adding, onOpen, onRemove, o
                   <p className="text-xs text-muted">{relativeTime(book.openedAt)}</p>
                 )}
               </button>
-              <button
-                onClick={() => confirm(`“${title(book)}” kitaplıktan kaldırılsın mı?`) && onRemove(book.key)}
-                className="absolute top-2 right-2 bg-sheet/90 px-1.5 py-0.5 text-[11px] text-muted opacity-0 transition-opacity group-hover:opacity-100 hover:text-accent"
-              >
-                Kaldır
-              </button>
+              <div className="absolute top-2 right-2 flex flex-col items-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                <button
+                  onClick={() => confirm(`“${title(book)}” kitaplıktan kaldırılsın mı?`) && onRemove(book.key)}
+                  className="bg-sheet/90 px-1.5 py-0.5 text-[11px] text-muted hover:text-accent"
+                >
+                  Kaldır
+                </button>
+                <button
+                  onClick={() => revealBook(book)}
+                  title="PDF'in bulunduğu klasörü dosya gezgininde açar"
+                  className="bg-sheet/90 px-1.5 py-0.5 text-[11px] text-muted hover:text-ink"
+                >
+                  {revealing?.key === book.key ? revealing.text : "Konumu aç"}
+                </button>
+              </div>
             </li>
           ))}
         </ul>
