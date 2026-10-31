@@ -3,6 +3,7 @@
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { getBookAnnotations, HIGHLIGHT_COLORS, type Annotation } from "./annotations";
 import { loadOcr } from "./ocr";
+import { repairPdfText } from "./pdf-text";
 
 // Sohbetin kullanıcının işaretlerini görmesi için: fosforlu kalemle çizilen yerlerin ve metin
 // vurgularının altında kalan yazı, geçtiği satırdan başlayan bir parçayla birlikte bulunur.
@@ -32,21 +33,22 @@ async function textLayout(pdf: PDFDocumentProxy, pageNumber: number): Promise<Pa
   const pieces: Piece[] = [];
   for (const item of content.items) {
     if (!("str" in item)) continue;
+    const str = repairPdfText(item.str);
     const t = item.transform as number[];
     const size = Math.hypot(t[2], t[3]) || item.height;
     const [ax, ay] = vp.convertToViewportPoint(t[4], t[5]);
     const [bx, by] = vp.convertToViewportPoint(t[4] + item.width, t[5] + size);
-    if (item.str.trim()) {
+    if (str.trim()) {
       pieces.push({
         start: text.length,
-        text: item.str,
+        text: str,
         x0: Math.min(ax, bx) / vp.width,
         x1: Math.max(ax, bx) / vp.width,
         y0: Math.min(ay, by) / vp.height,
         y1: Math.max(ay, by) / vp.height,
       });
     }
-    text += item.str + (item.hasEOL ? " " : "");
+    text += str + (item.hasEOL ? " " : "");
   }
   return { text, pieces };
 }

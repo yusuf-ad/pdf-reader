@@ -21,11 +21,23 @@ type Props = {
   onCreateBlank: (title: string, pages: number, style: PaperStyle) => Promise<void>;
   /** Bir kitap açıksa okumaya dönüş */
   onClose?: () => void;
+  /** Kapatma düğmesinin yazısı; verilirse Esc ipucu gösterilmez (boş bölmeyi kapatmak gibi) */
+  closeLabel?: string;
 };
 
 const title = (b: Book) => b.name.replace(/\.pdf$/i, "").replace(/[_]+/g, " ");
 
-export default function Library({ books, currentKey, adding, onOpen, onRemove, onAdd, onCreateBlank, onClose }: Props) {
+export default function Library({
+  books,
+  currentKey,
+  adding,
+  onOpen,
+  onRemove,
+  onAdd,
+  onCreateBlank,
+  onClose,
+  closeLabel,
+}: Props) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>("recent");
   const [blankOpen, setBlankOpen] = useState(false);
@@ -138,7 +150,11 @@ export default function Library({ books, currentKey, adding, onOpen, onRemove, o
         <BackupButtons />
         {onClose && (
           <button onClick={onClose} className="text-sm text-muted hover:text-ink">
-            Okumaya dön <kbd className="ml-1 border border-rule px-1 font-mono text-[11px]">Esc</kbd>
+            {closeLabel ?? (
+              <>
+                Okumaya dön <kbd className="ml-1 border border-rule px-1 font-mono text-[11px]">Esc</kbd>
+              </>
+            )}
           </button>
         )}
       </header>

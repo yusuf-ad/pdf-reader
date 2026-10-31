@@ -2,7 +2,16 @@
 
 import dynamic from "next/dynamic";
 import type { PDFDocumentProxy } from "pdfjs-dist";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import {
   addBook,
   adoptLegacyData,
@@ -38,6 +47,7 @@ import { extractSelection, selectedPdfText, selectionHighlights } from "@/lib/se
 import { deleteBook as deleteBookData, insertBookPage, requestPersistence } from "@/lib/storage";
 import { makeTextRenderer } from "@/lib/text-highlight";
 import type { SavedWord, Translation } from "@/lib/types";
+import { setStickyOpen, useStickyOpen } from "@/lib/sticky-notes";
 import { useSavedWords } from "@/lib/use-saved-words";
 import { AiMarkerStatus, useAiMarker } from "./ai-marker";
 import ChatModal from "./chat-modal";
@@ -47,6 +57,7 @@ import Library from "./library";
 import { QuestionDialog } from "./questions";
 import ResizablePanel from "./resizable-panel";
 import ShortcutsDialog from "./shortcuts-dialog";
+import StickyNoteCard from "./sticky-note";
 import Toolbar from "./toolbar";
 import HighlightSwatches from "./highlight-swatches";
 import TranslationPopover, { type PopoverState } from "./translation-popover";
@@ -67,9 +78,38 @@ type LaunchQueue = {
 
 const RIGHT_PANEL_KEY = "pdf-reader:right-panel";
 
-const clampScale = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, +s.toFixed(2)));
+function rightPanelPreference() {
+  try {
+    return localStorage.getItem(RIGHT_PANEL_KEY) !== "closed";
+  } catch {
+    return true;
+  }
+}
 
-export default function Reader() {
+const clampScale =(s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, +s.toFixed(2)));
+
+/** Bölünmüş görünümdeki yeri (split-view) */
+export type PaneProps = {
+  /** İki kitap yan yana mı */
+  split: boolean;
+  /** Kısayollar ve yapıştırma bu bölmeye mi gidiyor */
+  active: boolean;
+  /** Soldaki bölme: "Birlikte aç" ile gelen dosya burada açılır */
+  primary: boolean;
+  /** undefined: son okunan kitap, null: kitaplık, aksi halde bu kitap */
+  initialBook?: string | null;
+  onBookChange: (key: string | null) => void;
+  /** Yanına ikinci bir bölme aç (bölünmemişken) */
+  onSplit?: () => void;
+  /** Bu bölmeyi kapat (bölünmüşken) */
+  onClosePane?: () => void;
+  /** İki bölmenin yerini değiştir (bölünmüşken) */
+  onSwapPanes?: () => void;
+  /** Başlıktan tutup bölmeyi yana sürükleme (bölünmüşken) */
+  onPaneDragStart?: (e: ReactPointerEvent) => void;
+};
+
+export default function Reader({ pane }: { pane: PaneProps }) {
   const [file, setFile] = useState<File | null>(null);
   // Açık kitabın anahtarı (PDF içeriğinden; notlar buna bağlı)
   const [key, setKey] = useState<string | null>(null);
@@ -84,14 +124,17 @@ export default function Reader() {
 
   const [leftOpen, setLeftOpen] = useState(false);
   const [leftTab, setLeftTab] = useState<LeftTab>("contents");
-  // Kelimeler/notlar paneli; kapatılırsa sonraki açılışta da kapalı kalır
-  const [rightOpen, setRightOpen] = useState(() => {
-    try {
-      return localStorage.getItem(RIGHT_PANEL_KEY) !== "closed";
-    } catch {
-      return true;
-    }
-  });
+  // Kelimeler/notlar paneli; kapatılırsa sonraki açılışta da kapalı kalır.
+  // Yan yana açılan bölmede kapalı başlar (yer dar)
+  const [rightOpen, setRightOpen] = useState(() => !pane.split && rightPanelPreference());
+  // Ekran bölününce yan paneller kapanır (okuma alanı daralmasın); bölme kapanınca
+  // kelime paneli tek bölmedeki tercihine döner
+  const [wasSplit, setWasSplit] = useState(pane.split);
+  if (wasSplit !== pane.split) {
+    setWasSplit(pane.split);
+    if (pane.split) setLeftOpen(false);
+    setRightOpen(!pane.split && rightPanelPreference());
+  }
   const [focusMode, setFocusMode] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -118,6 +161,7 @@ export default function Reader() {
   const [inserting, setInserting] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const pageInputRef = useRef<HTMLInputElement>(null);
@@ -143,6 +187,11 @@ export default function Reader() {
   const { words, add, remove, clear } = useSavedWords();
   const bookmarks = useBookmarks(key);
   const ocrEnabled = useOcrEnabled(key);
+  // Sürüklenebilir not kâğıdı (notlar tüm kitaplarda ortak; açık kaldıysa kitap yeniden açılınca da görünür)
+  const stickyOpen = useStickyOpen(key);
+  const toggleSticky = useCallback(() => {
+    if (key) setStickyOpen(key, !stickyOpen);
+  }, [key, stickyOpen]);
   const numPages = pdf?.numPages ?? 0;
   // Başka kitaptan kalan kayıt yeri gösterilmesin
   const savedTo = savedToState?.book === key ? savedToState.name : null;
@@ -221,6 +270,7 @@ export default function Reader() {
   // Kurulu uygulamada bir PDF "Birlikte aç" ile açıldıysa onu göster
   const launchedRef = useRef(false);
   useEffect(() => {
+    if (!pane.primary) return;
     const queue = (window as { launchQueue?: LaunchQueue }).launchQueue;
     queue?.setConsumer(async ({ files }) => {
       const handle = files?.[0];
@@ -228,16 +278,18 @@ export default function Reader() {
       launchedRef.current = true;
       openFile(await handle.getFile());
     });
-  }, [openFile]);
+  }, [openFile, pane.primary]);
 
-  // Sayfa yenilenince son okunan kitabı geri aç
+  // Sayfa yenilenince son okunan kitabı (bölünmüş görünümde bu bölmenin kitabını) geri aç
+  const [initialBook] = useState(pane.initialBook);
   useEffect(() => {
     let active = true;
     listBooks()
       .then(async (list) => {
         if (!active) return;
         setBooks(list);
-        const last = list.find((b) => b.openedAt);
+        if (initialBook === null) return;
+        const last = initialBook ? list.find((b) => b.key === initialBook) : list.find((b) => b.openedAt);
         const f = last && (await loadFile(last.key));
         if (active && f && !launchedRef.current) openFile(f, last.key);
       })
@@ -245,7 +297,10 @@ export default function Reader() {
     return () => {
       active = false;
     };
-  }, [openFile]);
+  }, [openFile, initialBook]);
+
+  const reportBook = useEffectEvent((k: string | null) => pane.onBookChange(k));
+  useEffect(() => reportBook(key), [key]);
 
   const handleLoad = useCallback(
     async (doc: PDFDocumentProxy) => {
@@ -368,12 +423,14 @@ export default function Reader() {
   }, [pdf, key, currentPage]);
 
   useEffect(() => {
+    // Dar bölmedeki seçim tek bölmeli düzeni bozmasın
+    if (pane.split) return;
     try {
       localStorage.setItem(RIGHT_PANEL_KEY, rightOpen ? "open" : "closed");
     } catch {
       // yalnızca bu oturumda geçerli
     }
-  }, [rightOpen]);
+  }, [rightOpen, pane.split]);
 
   // Kaydırma alanının genişliğini ölç
   useEffect(() => {
@@ -713,8 +770,9 @@ export default function Reader() {
     [key, currentPage],
   );
 
-  // Ctrl V: panodaki ekran görüntüsü
+  // Ctrl V: panodaki ekran görüntüsü (bölünmüş görünümde etkin bölmeye)
   useEffect(() => {
+    if (!pane.active) return;
     const onPaste = (e: ClipboardEvent) => {
       const target = e.target as HTMLElement;
       if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
@@ -726,7 +784,7 @@ export default function Reader() {
     };
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
-  }, [chatOpen, libraryOpen, questionDraft, addQuestionImage]);
+  }, [pane.active, chatOpen, libraryOpen, questionDraft, addQuestionImage]);
 
   const toggleFocusMode = useCallback(() => {
     if (document.fullscreenElement) document.exitFullscreen();
@@ -758,7 +816,9 @@ export default function Reader() {
 
   // --- Klavye kısayolları ------------------------------------------------
 
+  // Bölünmüş görünümde yalnızca etkin bölme dinler
   useEffect(() => {
+    if (!pane.active) return;
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       const typing =
@@ -850,6 +910,7 @@ export default function Reader() {
         t: () => setTool((t) => (t === "text" ? null : "text")),
         e: () => setTool((t) => (t === "eraser" ? null : "eraser")),
         h: () => highlightSelection(highlightColor),
+        n: toggleSticky,
       };
       const action = actions[e.key.length === 1 ? e.key.toLowerCase() : e.key];
       if (action) {
@@ -860,6 +921,7 @@ export default function Reader() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [
+    pane.active,
     file,
     key,
     currentPage,
@@ -876,6 +938,7 @@ export default function Reader() {
     openSearch,
     openChat,
     toggleFocusMode,
+    toggleSticky,
     highlightSelection,
     highlightColor,
     savePdfWithNotes,
@@ -947,7 +1010,7 @@ export default function Reader() {
   const showPanels = !focusMode;
 
   return (
-    <div className="flex h-screen">
+    <div className="relative flex h-full">
       {file && leftOpen && showPanels && (
         <ResizablePanel id="left" edge="right" defaultWidth={320} minWidth={240}>
           <LeftPanel
@@ -975,7 +1038,9 @@ export default function Reader() {
       )}
 
       <main
-        className="relative flex min-h-0 min-w-0 flex-1 flex-col"
+        ref={mainRef}
+        // @container: araç çubuğu dar bölmede az kullanılan düğmeleri gizler
+        className="@container relative flex min-h-0 min-w-0 flex-1 flex-col"
         onDragOver={(e) => {
           e.preventDefault();
           setDragging(true);
@@ -1038,10 +1103,16 @@ export default function Reader() {
             onInsertPage={insertPage}
             inserting={inserting}
             onAddImage={() => imageInputRef.current?.click()}
+            onSplit={pane.onSplit}
+            onClosePane={pane.onClosePane}
+            onSwapPanes={pane.onSwapPanes}
+            onPaneDragStart={pane.onPaneDragStart}
             onSearch={openSearch}
             onFocusMode={toggleFocusMode}
             onHelp={() => setShowHelp(true)}
             onChat={openChat}
+            stickyOpen={stickyOpen}
+            onToggleSticky={toggleSticky}
             onLibrary={() => setLibraryOpen(true)}
             leftOpen={leftOpen}
             onToggleLeft={() => setLeftOpen((o) => !o)}
@@ -1094,6 +1165,17 @@ export default function Reader() {
           )}
         </div>
 
+        {file && key && stickyOpen && (
+          <StickyNoteCard
+            book={key}
+            bookTitle={file.name.replace(/\.pdf$/i, "")}
+            currentPage={currentPage}
+            onGoTo={goTo}
+            boundsRef={mainRef}
+            onClose={toggleSticky}
+          />
+        )}
+
         {cropping && (
           <div className="pointer-events-none absolute top-16 left-1/2 z-20 -translate-x-1/2 border border-rule bg-sheet px-3 py-1.5 text-xs shadow-[0_4px_16px_var(--shadow)]">
             Soruyu fareyle çerçevele · <span className="font-mono">Esc</span> vazgeç
@@ -1131,7 +1213,8 @@ export default function Reader() {
 
       {(!file || libraryOpen) && (
         <div
-          className="fixed inset-0 z-30 overflow-y-auto bg-paper"
+          // Bölmenin içinde: yandaki kitap görünür kalsın
+          className="absolute inset-0 z-30 overflow-y-auto bg-paper"
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             e.preventDefault();
@@ -1161,7 +1244,8 @@ export default function Reader() {
               const { blankBookPdf } = await import("@/lib/blank-book");
               await openFile(await blankBookPdf(title, pages, style));
             }}
-            onClose={file ? () => setLibraryOpen(false) : undefined}
+            onClose={file ? () => setLibraryOpen(false) : pane.onClosePane}
+            closeLabel={file ? undefined : "Bölmeyi kapat"}
           />
         </div>
       )}

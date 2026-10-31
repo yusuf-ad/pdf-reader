@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useRef, useState, type PointerEvent, type ReactNode, type RefObject } from "react";
 import { HIGHLIGHT_COLORS, INK_COLORS, type Tool } from "@/lib/annotations";
 import type { PaperStyle } from "@/lib/blank-book";
 import { PAPER_STYLES } from "@/lib/paper-styles";
 import {
   BookmarkIcon,
+  ClosePaneIcon,
   CropIcon,
   EraserIcon,
   ExpandIcon,
@@ -14,6 +15,7 @@ import {
   ImageIcon,
   KeyboardIcon,
   MarkerIcon,
+  NoteIcon,
   OcrIcon,
   PagePlusIcon,
   PanelLeftIcon,
@@ -21,6 +23,8 @@ import {
   PenIcon,
   SaveIcon,
   SearchIcon,
+  SplitIcon,
+  SwapPanesIcon,
   TextIcon,
   UndoIcon,
 } from "./icons";
@@ -47,6 +51,9 @@ type Props = {
   onFocusMode: () => void;
   onHelp: () => void;
   onChat: () => void;
+  /** Sürüklenebilir not kâğıdı */
+  stickyOpen: boolean;
+  onToggleSticky: () => void;
   onLibrary: () => void;
   leftOpen: boolean;
   onToggleLeft: () => void;
@@ -68,7 +75,20 @@ type Props = {
   justSaved: boolean;
   /** Bu kitabın en son kaydedildiği dosyanın adı */
   savedTo: string | null;
+  /** Yanına ikinci kitabı aç (bölünmemişken) */
+  onSplit?: () => void;
+  /** Bu bölmeyi kapat (bölünmüşken) */
+  onClosePane?: () => void;
+  /** İki bölmenin yerini değiştir (bölünmüşken) */
+  onSwapPanes?: () => void;
+  /** Başlıktan tutup bölmeyi yana sürükleme (bölünmüşken) */
+  onPaneDragStart?: (e: PointerEvent) => void;
 };
+
+// Dar bölmede (iki kitap yan yana) az kullanılan düğmeler gizlenir; kısayolları çalışır
+const NARROW = "@max-5xl:hidden";
+const NARROWER = "@max-3xl:hidden";
+const NARROWEST = "@max-2xl:hidden";
 
 const TOOLS: [Tool, string, () => ReactNode][] = [
   ["pen", "Kalem  D", PenIcon],
@@ -86,7 +106,15 @@ export default function Toolbar(p: Props) {
         <PanelLeftIcon />
       </IconButton>
 
-      <span className="ml-2 min-w-0 flex-1 truncate font-serif text-base">{p.title}</span>
+      <span
+        onPointerDown={p.onPaneDragStart}
+        title={p.onPaneDragStart ? "Sürükleyip yana bırak: bölmelerin yeri değişir" : undefined}
+        className={`ml-2 min-w-0 flex-1 truncate font-serif text-base ${
+          p.onPaneDragStart ? "cursor-grab select-none active:cursor-grabbing" : ""
+        }`}
+      >
+        {p.title}
+      </span>
 
       {p.numPages > 0 && (
         <PageInput
@@ -99,27 +127,27 @@ export default function Toolbar(p: Props) {
 
       <Divider />
 
-      <IconButton label="Uzaklaştır  Ctrl −" onClick={() => p.onZoom(-0.1)}>
+      <IconButton label="Uzaklaştır  Ctrl −" onClick={() => p.onZoom(-0.1)} className={NARROWER}>
         <span className="text-base leading-none">−</span>
       </IconButton>
       <button
         onClick={p.onResetZoom}
         title="Yakınlaştırmayı sıfırla  Ctrl 0"
-        className="w-12 text-center text-xs tabular-nums text-muted hover:text-ink"
+        className={`w-12 shrink-0 text-center text-xs tabular-nums text-muted hover:text-ink ${NARROWEST}`}
       >
         {Math.round(p.scale * 100)}%
       </button>
-      <IconButton label="Yakınlaştır  Ctrl +" onClick={() => p.onZoom(0.1)}>
+      <IconButton label="Yakınlaştır  Ctrl +" onClick={() => p.onZoom(0.1)} className={NARROWER}>
         <span className="text-base leading-none">+</span>
       </IconButton>
-      <IconButton label="Genişliğe sığdır  W" onClick={p.onFitWidth}>
+      <IconButton label="Genişliğe sığdır  W" onClick={p.onFitWidth} className={NARROW}>
         <FitWidthIcon />
       </IconButton>
-      <IconButton label="Sayfaya sığdır  P" onClick={p.onFitPage}>
+      <IconButton label="Sayfaya sığdır  P" onClick={p.onFitPage} className={NARROW}>
         <FitPageIcon />
       </IconButton>
 
-      <Divider />
+      <Divider className={NARROWEST} />
 
       {TOOLS.map(([id, label, ToolIcon]) => (
         <IconButton
@@ -165,11 +193,16 @@ export default function Toolbar(p: Props) {
       >
         <CropIcon />
       </IconButton>
-      <IconButton label="Yer imi  B" active={p.bookmarked} onClick={p.onToggleBookmark}>
+      <IconButton label="Notlar  N  (başlığından sürükle)" active={p.stickyOpen} onClick={p.onToggleSticky} highlight>
+        <NoteIcon />
+      </IconButton>
+      <IconButton label="Yer imi  B" active={p.bookmarked} onClick={p.onToggleBookmark} className={NARROWER}>
         <BookmarkIcon filled={p.bookmarked} />
       </IconButton>
-      <InsertPageMenu page={p.currentPage} busy={p.inserting} onInsert={p.onInsertPage} />
-      <IconButton label="Bu sayfaya görsel ekle" onClick={p.onAddImage}>
+      <div className={NARROWEST}>
+        <InsertPageMenu page={p.currentPage} busy={p.inserting} onInsert={p.onInsertPage} />
+      </div>
+      <IconButton label="Bu sayfaya görsel ekle" onClick={p.onAddImage} className={NARROW}>
         <ImageIcon />
       </IconButton>
       <IconButton
@@ -188,32 +221,33 @@ Değişiklik varsa 10 dakikada bir otomatik kaydedilir`
         <SaveIcon />
       </IconButton>
       {p.justSaved && <span className="shrink-0 pr-1 text-xs text-muted">Kaydedildi</span>}
-      <IconButton label="Belgede ara  Ctrl F" onClick={p.onSearch}>
+      <IconButton label="Belgede ara  Ctrl F" onClick={p.onSearch} className={NARROWER}>
         <SearchIcon />
       </IconButton>
       <IconButton
         label={`Taranmış sayfalarda metin tanıma (OCR): ${p.ocr ? "açık" : "kapalı"}`}
         active={p.ocr}
         onClick={p.onToggleOcr}
+        className={NARROW}
       >
         <OcrIcon />
       </IconButton>
-      <IconButton label="Odak modu  F" onClick={p.onFocusMode}>
+      <IconButton label="Odak modu  F" onClick={p.onFocusMode} className={NARROW}>
         <ExpandIcon />
       </IconButton>
-      <IconButton label="Kısayollar  ?" onClick={p.onHelp}>
+      <IconButton label="Kısayollar  ?" onClick={p.onHelp} className={NARROW}>
         <KeyboardIcon />
       </IconButton>
 
-      <Divider />
+      <Divider className={NARROWEST} />
 
       <button
         onClick={p.onChat}
-        title="Seçili metin hakkında sor"
-        className="flex shrink-0 items-center gap-1.5 px-2 text-muted hover:text-ink"
+        title="Seçili metin hakkında sor  Ctrl K"
+        className={`flex shrink-0 items-center gap-1.5 px-2 text-muted hover:text-ink ${NARROWEST}`}
       >
         Sor
-        <kbd className="border border-rule px-1 font-mono text-[11px]">Ctrl K</kbd>
+        <kbd className={`border border-rule px-1 font-mono text-[11px] ${NARROW}`}>Ctrl K</kbd>
       </button>
       <button
         onClick={p.onLibrary}
@@ -221,8 +255,23 @@ Değişiklik varsa 10 dakikada bir otomatik kaydedilir`
         className="flex shrink-0 items-center gap-1.5 px-2 text-muted hover:text-ink"
       >
         Kitaplık
-        <kbd className="border border-rule px-1 font-mono text-[11px]">L</kbd>
+        <kbd className={`border border-rule px-1 font-mono text-[11px] ${NARROW}`}>L</kbd>
       </button>
+      {p.onSplit && (
+        <IconButton label="Yanına başka bir kitap aç (bölünmüş görünüm)" onClick={p.onSplit}>
+          <SplitIcon />
+        </IconButton>
+      )}
+      {p.onSwapPanes && (
+        <IconButton label="Bölmelerin yerini değiştir (ya da başlıktan tutup sürükle)" onClick={p.onSwapPanes}>
+          <SwapPanesIcon />
+        </IconButton>
+      )}
+      {p.onClosePane && (
+        <IconButton label="Bu bölmeyi kapat (yandaki kitap kalır)" onClick={p.onClosePane}>
+          <ClosePaneIcon />
+        </IconButton>
+      )}
       <IconButton label="Kelime listesi  ]" active={p.rightOpen} onClick={p.onToggleRight}>
         <PanelRightIcon />
       </IconButton>
@@ -241,6 +290,7 @@ function IconButton({
   active,
   highlight,
   onClick,
+  className = "",
   children,
 }: {
   label: string;
@@ -248,6 +298,7 @@ function IconButton({
   /** Etkinken arka planla belirginleştir (seçili araç) */
   highlight?: boolean;
   onClick: (e: React.MouseEvent) => void;
+  className?: string;
   children: ReactNode;
 }) {
   return (
@@ -258,7 +309,7 @@ function IconButton({
       aria-pressed={active}
       className={`flex h-8 w-8 shrink-0 items-center justify-center transition-colors hover:text-ink ${
         active ? "text-ink" : "text-muted"
-      } ${active && highlight ? "bg-ink/8" : ""}`}
+      } ${active && highlight ? "bg-ink/8" : ""} ${className}`}
     >
       {children}
     </button>
@@ -321,8 +372,8 @@ function InsertPageMenu({
   );
 }
 
-function Divider() {
-  return <span className="mx-1.5 h-4 w-px shrink-0 bg-rule" />;
+function Divider({ className = "" }: { className?: string }) {
+  return <span className={`mx-1.5 h-4 w-px shrink-0 bg-rule ${className}`} />;
 }
 
 function PageInput({

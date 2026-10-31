@@ -44,7 +44,9 @@ export const SUGGESTIONS_CLOSE = "</oneriler>";
  * Cevabın sonundaki öneri sorularını ayırır. Akış sırasında yarım gelmiş etiket
  * ("<oner…") de metinden atılır, böylece ekranda görünmez.
  */
-export function splitSuggestions(text: string) {
+export function splitSuggestions(raw: string) {
+  // Modelin web aramasından kalan kaynak işaretleri (özel karakterli "cite turn0…") ekranda kutu olarak görünür
+  const text = raw.replace(/\uE200[^\uE201]*\uE201/g, "").replace(/[\uE200-\uE202]/g, "");
   const start = text.indexOf(SUGGESTIONS_OPEN);
   if (start < 0) {
     const partial = text.match(/<[a-z]*$/);

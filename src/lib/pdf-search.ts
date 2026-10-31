@@ -3,6 +3,7 @@
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { useEffect, useState } from "react";
 import { loadOcrText } from "./ocr";
+import { repairPdfText } from "./pdf-text";
 
 export type SearchHit = { page: number; snippet: string; start: number; length: number };
 
@@ -18,10 +19,12 @@ export async function getPageText(pdf: PDFDocumentProxy, pageNumber: number, boo
 
   const page = await pdf.getPage(pageNumber);
   const content = await page.getTextContent();
-  const text = content.items
-    .map((item) => ("str" in item ? item.str + (item.hasEOL ? " " : "") : ""))
-    .join("")
-    .replace(/\s+/g, " ");
+  const text = repairPdfText(
+    content.items
+      .map((item) => ("str" in item ? item.str + (item.hasEOL ? " " : "") : ""))
+      .join("")
+      .replace(/\s+/g, " "),
+  );
   if (book && text.trim().length < 20) {
     const ocr = await loadOcrText(book, pageNumber);
     // Henüz tanınmadıysa önbelleğe alma; sonra tanınınca bulunabilsin

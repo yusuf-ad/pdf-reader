@@ -7,6 +7,7 @@ import {
   HIGHLIGHT_COLORS,
   INK_COLORS,
   newId,
+  getBookAnnotations,
   removeAnnotations,
   type Annotation,
 } from "@/lib/annotations";
@@ -91,7 +92,15 @@ export function AiCursor({ page, width }: { page: number; width: number }) {
 // --- Kayıt ----------------------------------------------------------------------
 
 /** Bir işaretleme (araç çağrısı) sonucu: eklenen işaretler ve bulunamayan sorular. */
-export type MarkRecord = { page: number; ids: string[]; missing: string[]; error?: string; undone?: boolean };
+export type MarkRecord = {
+  page: number;
+  ids: string[];
+  missing: string[];
+  /** Doğru şıkkın üstünde kullanıcının kendi işareti olduğu için yanlış sayılmayan sorular */
+  kept?: string[];
+  error?: string;
+  undone?: boolean;
+};
 type MarkRecords = Record<string, MarkRecord>;
 
 const recordsKey = (book: string) => bookKey("ai-marks", book);
@@ -109,11 +118,51 @@ export function undoMarks(book: string, id: string) {
   saveRecord(book, id, { ...rec, ids: [], undone: true });
 }
 
+// --- Kullanıcının işareti -------------------------------------------------------------
+
+// Şık kutusunun çevresinde bu kadar pay (sayfaya oranla) içindeki işaretler o şıkka sayılır
+const OPTION_PAD = 0.008;
+
+/**
+ * Kullanıcının kendi kalem/vurgu işareti şıkkın kutusuna değiyor mu. Model, seçilen şıkkı
+ * görselden okurken yanılabilir (ör. tikin kolu başka bir şıkkın yanından geçer); doğru şık
+ * işaretliyse soru yanlış diye işaretlenmez. Asistanın kendi işaretleri sayılmaz.
+ */
+function userMarked(book: string, page: number, rects: number[]) {
+  const own = new Set(Object.values(get<MarkRecords>(recordsKey(book)) ?? {}).flatMap((r) => r.ids));
+  const boxes: [number, number, number, number][] = [];
+  for (let i = 0; i < rects.length; i += 4) {
+    boxes.push([rects[i] - OPTION_PAD, rects[i + 1] - OPTION_PAD, rects[i] + rects[i + 2] + OPTION_PAD, rects[i + 1] + rects[i + 3] + OPTION_PAD]);
+  }
+  const inside = (x: number, y: number) => boxes.some(([x0, y0, x1, y1]) => x >= x0 && x <= x1 && y >= y0 && y <= y1);
+  return (getBookAnnotations(book)[page] ?? []).some((a) => {
+    if (own.has(a.id)) return false;
+    if (a.type === "ink") {
+      const p = a.points;
+      for (let i = 0; i < p.length; i += 2) {
+        if (inside(p[i], p[i + 1])) return true;
+        // Hızlı çizilen çizgide noktalar seyrek olabilir: ara noktalara da bak
+        if (i + 3 < p.length) {
+          for (const t of [0.25, 0.5, 0.75]) if (inside(p[i] + (p[i + 2] - p[i]) * t, p[i + 1] + (p[i + 3] - p[i + 1]) * t)) return true;
+        }
+      }
+      return false;
+    }
+    if (a.type === "highlight") {
+      for (let i = 0; i < a.rects.length; i += 4) {
+        const [x, y, w, h] = a.rects.slice(i, i + 4);
+        if (boxes.some(([x0, y0, x1, y1]) => x < x1 && x + w > x0 && y < y1 && y + h > y0)) return true;
+      }
+    }
+    return false;
+  });
+}
+
 // --- Uygulama ---------------------------------------------------------------------
 
 export type MarkStatus =
   | { kind: "running"; done: number; total: number }
-  | { kind: "done"; id: string; count: number; missing: string[] }
+  | { kind: "done"; id: string; count: number; missing: string[]; kept: string[] }
   | { kind: "error"; text: string };
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -126,7 +175,9 @@ export function useAiMarker(
   goTo: (page: number) => void,
 ) {
   const [status, setStatus] = useState<MarkStatus | null>(null);
-  const runningRef = useRef(false);
+  // Birden çok sayfa (çok sayfalı kontrol) sırayla işaretlenir; Durdur sıradakileri de iptal eder
+  const queueRef = useRef<Promise<void>>(Promise.resolve());
+  const stopGenRef = useRef(0);
   const stopRef = useRef(false);
   const latest = useRef({ pdf, book, goTo });
   useEffect(() => {
@@ -153,16 +204,16 @@ export function useAiMarker(
     [scrollRef],
   );
 
-  const run = useCallback(
+  const runOne = useCallback(
     async (id: string, input: MarkInput) => {
       const { pdf, book, goTo } = latest.current;
-      if (!pdf || !book || runningRef.current) return;
-      runningRef.current = true;
+      if (!pdf || !book) return;
       stopRef.current = false;
       const page = Math.min(pdf.numPages, Math.max(1, input.page));
       const questions = input.questions;
       const ids: string[] = [];
       const missing: string[] = [];
+      const kept: string[] = [];
       setStatus({ kind: "running", done: 0, total: questions.length });
       try {
         const p = await pdf.getPage(page);
@@ -194,6 +245,11 @@ export function useAiMarker(
             missing.push(q.number);
             continue;
           }
+          // Kontrolde: kullanıcı doğru şıkkı işaretlemişse model seçimi yanlış okumuştur
+          if (q.chosen && spot.option.length && userMarked(book, page, spot.option)) {
+            kept.push(q.number);
+            continue;
+          }
           const [nx, ny, nw, nh] = spot.number;
           scrollTo(page, ny);
           await moveTo(nx + nw, ny + nh);
@@ -222,22 +278,33 @@ export function useAiMarker(
           }
           setStatus({ kind: "running", done: i + 1, total: questions.length });
         }
-        saveRecord(book, id, { page, ids, missing });
-        setStatus({ kind: "done", id, count: questions.length - missing.length, missing });
+        saveRecord(book, id, { page, ids, missing, kept });
+        setStatus({ kind: "done", id, count: questions.length - missing.length - kept.length, missing, kept });
       } catch (e) {
         saveRecord(book, id, { page, ids, missing, error: String(e) });
         setStatus({ kind: "error", text: "İşaretlenemedi: sayfa okunamadı." });
       } finally {
         await wait(600);
         setCursor(null);
-        runningRef.current = false;
       }
     },
     [scrollTo],
   );
 
+  const run = useCallback(
+    (id: string, input: MarkInput) => {
+      const gen = stopGenRef.current;
+      queueRef.current = queueRef.current.then(() =>
+        gen === stopGenRef.current ? runOne(id, input) : undefined,
+      );
+      return queueRef.current;
+    },
+    [runOne],
+  );
+
   const stop = useCallback(() => {
     stopRef.current = true;
+    stopGenRef.current++;
   }, []);
   const dismiss = useCallback(() => setStatus(null), []);
   return { status, run, stop, dismiss };
@@ -277,6 +344,9 @@ export function AiMarkerStatus({
             {status.count} soru işaretlendi
             {status.missing.length > 0 && (
               <span className="text-muted"> · bulunamadı: {status.missing.join(", ")}</span>
+            )}
+            {status.kept.length > 0 && (
+              <span className="text-muted"> · doğru şıkkı işaretlemişsin: {status.kept.join(", ")}</span>
             )}
           </span>
           {book && status.count > 0 && (
@@ -354,13 +424,15 @@ export function MarkCard({
   const questions = (input?.questions ?? []).filter((q) => q?.number);
   // Kontrolde kaç sorunun cevaplandığı bilinir (yanlışlarını kullanıcı söylediyse null)
   const checked = typeof input?.checked === "number" ? input.checked : null;
+  // Doğru şıkkı işaretli çıkanlar yanlış sayılmaz
+  const wrong = questions.length - (rec?.kept?.length ?? 0);
   const title = !ready
     ? "Sorular çözülüyor…"
     : checked === 0
       ? "İşaretli cevap bulunamadı"
       : checked !== null
-        ? questions.length
-          ? `${checked} sorudan ${Math.max(0, checked - questions.length)} doğru, ${questions.length} yanlış`
+        ? wrong
+          ? `${checked} sorudan ${Math.max(0, checked - wrong)} doğru, ${wrong} yanlış`
           : `${checked} sorunun hepsi doğru`
         : "Yanlışlar işaretlendi";
   return (
@@ -401,6 +473,7 @@ export function MarkCard({
         <ul className="mt-3 space-y-2">
           {questions.map((q, i) => {
             const lost = rec?.missing.includes(q!.number!);
+            const kept = rec?.kept?.includes(q!.number!);
             return (
               <li key={i} className="flex gap-3 text-sm leading-snug">
                 <span className="w-24 shrink-0 font-mono tabular-nums">
@@ -413,9 +486,14 @@ export function MarkCard({
                   {q!.correct && <span className="text-muted"> → </span>}
                   {q!.correct && <span className="bg-[#7bc96f]/50 px-0.5 text-ink">{q!.correct}</span>}
                 </span>
-                <span className={`font-serif ${lost ? "text-muted line-through" : "text-ink/85"}`}>
+                <span className={`font-serif ${lost || kept ? "text-muted line-through" : "text-ink/85"}`}>
                   {q!.note}
                   {lost && <span className="ml-2 font-sans text-xs text-accent no-underline">sayfada bulunamadı</span>}
+                  {kept && (
+                    <span className="ml-2 font-sans text-xs text-good no-underline">
+                      doğru şıkkı ({q!.correct}) işaretlemişsin, yanlış sayılmadı
+                    </span>
+                  )}
                 </span>
               </li>
             );

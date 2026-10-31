@@ -54,6 +54,7 @@ import {
   useMemory,
   useMemoryEnabled,
 } from "@/lib/memory-store";
+import { getBookAnnotations } from "@/lib/annotations";
 import { getMarksText } from "@/lib/marks";
 import { renderMarkedPage } from "@/lib/page-image";
 import { getPageText } from "@/lib/pdf-search";
@@ -137,6 +138,8 @@ const IMAGE_PROMPT = "Bu soruyu çöz ve adım adım açıkla.";
 
 // Az metinli sayfalar boş sayılır (taranmış, OCR yapılmamış)
 const MIN_PAGE_CHARS = 20;
+// Cevap kontrolünde bir istekte gönderilen en fazla sayfa görüntüsü
+const MAX_CHECK_PAGES = 20;
 
 export default function ChatModal(props: Props) {
   // Açık sohbet; PDF değişince o kitabın en son sohbeti açılır
@@ -213,6 +216,9 @@ function ChatWindow({
   const [pageOffAt, setPageOffAt] = useState<number | null>(null);
   const pageOff = pageOffAt === currentPage;
   const pagePreview = usePagePreview(open, pdf, book, currentPage);
+  // Sayfa aralığı chip'i: açıkken sorular açık sayfa yerine bu sayfalarla (varsayılan tüm PDF) gider;
+  // kapatılana kadar açık kalır
+  const [pageRange, setPageRange] = useState<PageRange | null>(null);
 
   /** Her isteğe eklenen kitap bilgisi: künye, profil, açık bölüm ve sayfa (chip kaldırıldıysa sayfa metni ve işaretleri olmadan). */
   const bookBody = async (): Promise<{ book?: BookContext }> => {
@@ -316,7 +322,9 @@ function ChatWindow({
     const asked = messages[index - 1];
     const meta = asked?.metadata;
     const question = meta?.skill
-      ? skillLabel(meta.skill)
+      ? meta.skill.name === "belge"
+        ? (meta.skill.request ?? skillLabel(meta.skill))
+        : skillLabel(meta.skill)
       : [meta?.reference?.text, asked ? textOf(asked) : ""]
           .filter(Boolean)
           .join(" — ");
@@ -366,8 +374,12 @@ function ChatWindow({
     }
     // Düzenlenen soru yerinde değişir; görselleri ve seçili metni korunur
     const files = asked.parts.filter((p) => p.type === "file");
-    const metadata = asked.metadata?.skill
-      ? asked.metadata
+    const skill = asked.metadata?.skill;
+    const metadata = skill
+      ? // Sayfalara soru düzenlenince yeni soru aynı sayfalarla gider
+        skill.name === "belge"
+        ? { ...asked.metadata, skill: { ...skill, request: text } }
+        : asked.metadata
       : { ...asked.metadata, page: pageOff ? undefined : currentPage };
     send({ text, files, metadata, messageId: id });
   };
@@ -437,6 +449,8 @@ function ChatWindow({
     from: number,
     to: number,
     extra?: Pick<SkillRequest, "count" | "request">,
+    /** Sayfalara soruda eklenen görseller ve seçili metin */
+    attach?: { files: FileUIPart[]; reference: Reference | null },
   ) => {
     if (!pdf) return;
     cancelReadRef.current = false;
@@ -459,16 +473,50 @@ function ChatWindow({
       setReading(null);
     }
     // Cevap kontrolü: kalemle işaretlenen şıklar metinde yok; sayfa işaretleriyle görsel olarak gider
-    let files: FileUIPart[] = [];
+    let files: FileUIPart[] = attach?.files ?? [];
+    let imagePages: number[] | undefined;
     if (name === "kontrol" && book) {
+      // Birden çok sayfada yalnızca kullanıcının işaret koyduğu sayfalar gider
+      const marked = getBookAnnotations(book);
+      imagePages =
+        from === to
+          ? [from]
+          : Array.from({ length: to - from + 1 }, (_, i) => from + i).filter(
+              (p) => marked[p]?.length,
+            );
+      if (!imagePages.length)
+        return setNotice(`s. ${from}–${to} arasında işaretli cevap yok.`);
+      if (imagePages.length > MAX_CHECK_PAGES) {
+        imagePages = imagePages.slice(0, MAX_CHECK_PAGES);
+        setNotice(
+          `Bir seferde en fazla ${MAX_CHECK_PAGES} sayfa kontrol edilir; s. ${imagePages[imagePages.length - 1]}'e kadarki sayfalar gönderildi.`,
+        );
+      }
       try {
-        files = [await renderMarkedPage(pdf, book, from)];
+        files = [];
+        for (const p of imagePages) files.push(await renderMarkedPage(pdf, book, p));
       } catch {
         return setNotice("Sayfanın görüntüsü alınamadı.");
       }
+      // Gönderilmeyen sayfaların metni de gitmesin
+      if (from !== to) {
+        const last = imagePages[imagePages.length - 1];
+        to = last;
+        pages.splice(0, pages.length, ...pages.filter((p) => p.page <= last));
+      }
     }
     const metadata = {
-      skill: { name, from, to, fileName: title, pages, emptyPages, ...extra },
+      skill: {
+        name,
+        from,
+        to,
+        fileName: title,
+        pages,
+        emptyPages: emptyPages.filter((p) => p <= to),
+        ...(imagePages && from !== to && { imagePages }),
+        ...extra,
+      },
+      ...(attach?.reference && { reference: attach.reference }),
     };
     send(files.length ? { text, files, metadata } : { text, metadata });
   };
@@ -537,11 +585,22 @@ function ChatWindow({
     // "işaretlediğim soruları kontrol et": sayfa işaretleriyle görsel olarak gider, model yanlışları bulur
     const check =
       !reference && !images.length && pdf && onMarkQuestions
-        ? parseCheckRequest(text, pdf.numPages, currentPage)
+        ? parseCheckRequest(text, pdf.numPages, currentPage, pageRange)
         : null;
     if (check) {
       setInput("");
-      runSkill(text, "kontrol", check.page, check.page, { request: text });
+      runSkill(text, "kontrol", check.from, check.to, { request: text });
+      return;
+    }
+    // Sayfa aralığı chip'i açıksa soru o sayfalarla gider (uzun aralık parça parça taranır)
+    if (pageRange && pdf) {
+      setInput("");
+      // Başka bir PDF açıldıysa aralık yeni belgeye sığdırılır
+      const to = Math.min(pageRange.to, pdf.numPages);
+      const from = Math.min(pageRange.from, to);
+      runSkill(text, "belge", from, to, { request: text }, { files: images, reference });
+      setImages([]);
+      onClearReference();
       return;
     }
     setInput("");
@@ -697,6 +756,12 @@ function ChatWindow({
                 gibi yazarak da isteyebilirsin.
               </p>
               <p className="mt-4">
+                Sorunun yalnızca açık sayfaya değil tüm PDF&apos;e ya da bir
+                sayfa aralığına göre cevaplanmasını istersen alttaki{" "}
+                <Kbd>+ Tüm sayfalar / aralık</Kbd>&apos;ı aç; sınırları
+                yazarak aralığı daraltabilirsin.
+              </p>
+              <p className="mt-4">
                 Test çözdüysen şıklarını kalemle işaretleyip “cevaplarımı
                 kontrol et” yaz: işaretlerini sayfadan okur, yanlışlarının
                 numarasını sarı, doğru şıkkı yeşil işaretler ve yanına kısa not
@@ -786,13 +851,23 @@ function ChatWindow({
         <div className="mx-auto max-w-[70ch]">
           {pdf && (
             <div className="mb-2 flex items-baseline gap-3 text-xs">
-              <PageChip
-                page={currentPage}
-                preview={pagePreview?.page === currentPage ? pagePreview : null}
-                off={pageOff}
-                onToggle={() => {
-                  setPageOffAt(pageOff ? null : currentPage);
-                  inputRef.current?.focus();
+              {!pageRange && (
+                <PageChip
+                  page={currentPage}
+                  preview={pagePreview?.page === currentPage ? pagePreview : null}
+                  off={pageOff}
+                  onToggle={() => {
+                    setPageOffAt(pageOff ? null : currentPage);
+                    inputRef.current?.focus();
+                  }}
+                />
+              )}
+              <PageRangeChip
+                numPages={pdf.numPages}
+                range={pageRange}
+                onChange={(r, refocus) => {
+                  setPageRange(r);
+                  if (refocus) inputRef.current?.focus();
                 }}
               />
               {!reference && messages.length === 0 && (
@@ -1042,6 +1117,36 @@ const Message = memo(function Message({
                 onGoTo={onGoTo}
               />
             </div>
+          ) : p.type === "tool-markPages" ? (
+            // Birden çok sayfanın kontrolü: sayfalar sırayla işaretlenir
+            <div key={p.toolCallId} className={`space-y-3 ${body ? "mt-3" : ""}`}>
+              <MarkPagesSummary
+                pages={p.input?.pages}
+                ready={
+                  p.state === "input-available" ||
+                  p.state === "output-available"
+                }
+              />
+              {(p.input?.pages ?? []).map(
+                (page, j) =>
+                  page && (
+                    <MarkCard
+                      key={j}
+                      id={`${p.toolCallId}:${j}`}
+                      input={page}
+                      ready={
+                        p.state === "input-available" ||
+                        p.state === "output-available"
+                      }
+                      streaming={streaming}
+                      book={book}
+                      error={p.state === "output-error" ? p.errorText : undefined}
+                      onRun={onMark}
+                      onGoTo={onGoTo}
+                    />
+                  ),
+              )}
+            </div>
           ) : p.type === "tool-writeNote" ? (
             // Sayfadaki nota ekleme: akış sırasında geldiyse not kendiliğinden yazılır
             <div key={p.toolCallId} className={body ? "mt-3" : ""}>
@@ -1133,7 +1238,7 @@ const Message = memo(function Message({
           {draft === null && onResend && (
             <span className="flex gap-4 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
               {/* Komutla başlatılan özet/test isteğinde metin komutun kendisi; yalnızca yeniden sorulur */}
-              {!m.metadata?.skill && (
+              {(!m.metadata?.skill || m.metadata.skill.name === "belge") && (
                 <button
                   onClick={() => setDraft(text)}
                   title="Soruyu düzenleyip yeniden gönder"
@@ -1624,6 +1729,133 @@ function PageChip({
         ×
       </button>
     </span>
+  );
+}
+
+type PageRange = { from: number; to: number };
+
+/**
+ * Soruyu açık sayfa yerine bir sayfa aralığıyla gönderir; açılınca tüm PDF seçilir, sınırlar
+ * yazılarak daraltılır. Açıkken sayfa chip'inin yerini alır.
+ */
+function PageRangeChip({
+  numPages,
+  range,
+  onChange,
+}: {
+  numPages: number;
+  range: PageRange | null;
+  /** refocus: değişiklikten sonra soru alanına dön */
+  onChange: (range: PageRange | null, refocus: boolean) => void;
+}) {
+  if (!range)
+    return (
+      <button
+        onClick={() => onChange({ from: 1, to: numPages }, true)}
+        title="Soruyu açık sayfa yerine PDF'in tamamıyla ya da bir sayfa aralığıyla gönder"
+        className="shrink-0 border border-dashed border-rule px-2 py-0.5 text-muted hover:border-muted hover:text-ink"
+      >
+        + Tüm sayfalar / aralık
+      </button>
+    );
+  const to = Math.min(range.to, numPages);
+  const from = Math.min(range.from, to);
+  const whole = from === 1 && to === numPages;
+  const set = (a: number, b: number, refocus: boolean) => {
+    const clamp = (n: number) => Math.min(numPages, Math.max(1, n));
+    const [x, y] = [clamp(a), clamp(b)];
+    onChange({ from: Math.min(x, y), to: Math.max(x, y) }, refocus);
+  };
+  return (
+    <span
+      title="Sorular bu sayfalarla gider; uzun aralıkta önce soruyla ilgili yerler taranır"
+      className="flex shrink-0 items-baseline gap-1.5 border border-rule bg-paper px-2 py-0.5"
+    >
+      <span className="text-ink">{whole ? "Tüm PDF" : "Sayfa"}</span>
+      <PageNumberInput label="İlk sayfa" value={from} onCommit={(n, r) => set(n, to, r)} />
+      <span className="text-muted">–</span>
+      <PageNumberInput label="Son sayfa" value={to} onCommit={(n, r) => set(from, n, r)} />
+      <span className="text-muted">/ {numPages}</span>
+      {!whole && (
+        <button
+          onClick={() => onChange({ from: 1, to: numPages }, true)}
+          title="Tüm PDF'i seç"
+          className="text-muted hover:text-ink"
+        >
+          tümü
+        </button>
+      )}
+      <button
+        onClick={() => onChange(null, true)}
+        aria-label="Sayfa aralığını sorudan çıkar"
+        title="Yalnızca açık sayfayı gönder"
+        className="text-muted hover:text-accent"
+      >
+        ×
+      </button>
+    </span>
+  );
+}
+
+/** Aralık sınırı; yazarken değil, Enter'da ya da odaktan çıkınca uygulanır. */
+function PageNumberInput({
+  label,
+  value,
+  onCommit,
+}: {
+  label: string;
+  value: number;
+  onCommit: (page: number, refocus: boolean) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  const [shown, setShown] = useState(value);
+  if (shown !== value) {
+    setShown(value);
+    setDraft(String(value));
+  }
+  const commit = (refocus: boolean) => {
+    const n = parseInt(draft, 10);
+    if (Number.isFinite(n)) onCommit(n, refocus);
+    else setDraft(String(value));
+  };
+  return (
+    <input
+      aria-label={label}
+      inputMode="numeric"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value.replace(/\D/g, ""))}
+      onBlur={() => commit(false)}
+      onKeyDown={(e) => {
+        // Enter soruyu göndermesin; aralığı uygulayıp soru alanına dönsün
+        e.stopPropagation();
+        if (e.key === "Enter") {
+          e.preventDefault();
+          commit(true);
+        } else if (e.key === "Escape") setDraft(String(value));
+      }}
+      onFocus={(e) => e.currentTarget.select()}
+      style={{ width: `${Math.max(2, String(value).length, draft.length) + 1}ch` }}
+      className="border-b border-rule bg-transparent text-center font-mono text-ink outline-none focus:border-ink"
+    />
+  );
+}
+
+/** Çok sayfalı kontrolün toplamı: kaç soru cevaplanmış, kaçı yanlış. */
+function MarkPagesSummary({
+  pages,
+  ready,
+}: {
+  pages: ({ checked?: number | null; questions?: unknown[] } | undefined)[] | undefined;
+  ready: boolean;
+}) {
+  if (!ready || !pages?.length) return null;
+  const checked = pages.reduce((n, p) => n + (p?.checked ?? 0), 0);
+  const wrong = pages.reduce((n, p) => n + (p?.questions?.length ?? 0), 0);
+  return (
+    <p className="font-serif text-[17px] leading-relaxed text-ink">
+      {pages.length} sayfada {checked} soru cevaplanmış:{" "}
+      <strong>{Math.max(0, checked - wrong)} doğru, {wrong} yanlış</strong>.
+    </p>
   );
 }
 

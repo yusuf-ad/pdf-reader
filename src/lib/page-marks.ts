@@ -39,6 +39,13 @@ export const markInputSchema = z.object({
 });
 
 export type MarkInput = z.infer<typeof markInputSchema>;
+
+// Birden çok sayfanın cevap kontrolü tek çağrıda gelir; istemci her sayfayı sırayla işaretler
+export const markPagesInputSchema = z.object({
+  pages: z
+    .array(markInputSchema)
+    .describe("Şıkkı işaretlenmiş her sayfa için bir öğe, sayfa sırasıyla; hepsi doğru olan sayfa da (questions boş) yer alır"),
+});
 export type MarkedQuestion = MarkInput["questions"][number];
 
 export const markTools = {
@@ -48,6 +55,12 @@ export const markTools = {
     inputSchema: markInputSchema,
     // İşaretler istemcide eklenir; modele yalnızca kaç soru verildiği bildirilir
     execute: async ({ questions }) => ({ marked: questions.length }),
+  }),
+  markPages: tool({
+    description:
+      "Birden çok sayfadaki cevaplar kontrol edildiğinde çağrılır: her sayfa için markQuestions ile aynı bilgi. Yanlışlar sayfalarda sırayla işaretlenir.",
+    inputSchema: markPagesInputSchema,
+    execute: async ({ pages }) => ({ marked: pages.reduce((n, p) => n + p.questions.length, 0) }),
   }),
 };
 

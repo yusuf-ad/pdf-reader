@@ -109,10 +109,18 @@ export async function POST(req: Request) {
       const skill = m.metadata?.skill;
       if (skill) {
         // Belge metni yalnızca son istekte gönderilir; önceki özetler sohbette zaten varl
-        const text =
+        const prompt =
           i === last
             ? await buildSkillPrompt(skill, model, req.signal)
-            : `(${skillLabel(skill)} istendi; cevabı aşağıda.)`;
+            : skill.name === "belge"
+              ? `${skill.request ?? ""}
+(${skillLabel(skill)}: bu sayfalara soruldu; cevabı aşağıda.)`
+              : `(${skillLabel(skill)} istendi; cevabı aşağıda.)`;
+        // Sayfalara sorulurken seçili metin de eklenebilir
+        const reference = m.metadata?.reference;
+        const text = reference ? `${formatReference(reference)}
+
+${prompt}` : prompt;
         // Cevap kontrolünde sayfanın işaretli görüntüsü de gider (yalnızca son istekte)
         const files = i === last ? m.parts.filter((p) => p.type === "file") : [];
         return { ...m, parts: [{ type: "text" as const, text }, ...files] };
@@ -135,7 +143,8 @@ export async function POST(req: Request) {
   );
 
   // Test isteğinde model mutlaka test aracını, kelime isteğinde öneri aracını çağırır
-  const skillName = messages[last]?.metadata?.skill?.name;
+  const lastSkill = messages[last]?.metadata?.skill;
+  const skillName = lastSkill?.name;
   const system = [SYSTEM, memory && formatMemory(memory), book && bookBlock(book, messages[last])]
     .filter(Boolean)
     .join("\n\n");
@@ -156,8 +165,10 @@ export async function POST(req: Request) {
         ? { type: "tool", toolName: "createQuiz" }
         : skillName === "kelime"
           ? { type: "tool", toolName: "proposeWords" }
-          : skillName === "isaretle" || skillName === "kontrol"
-            ? { type: "tool", toolName: "markQuestions" }
+          : skillName === "kontrol" && lastSkill && lastSkill.from !== lastSkill.to
+            ? { type: "tool", toolName: "markPages" }
+            : skillName === "isaretle" || skillName === "kontrol"
+              ? { type: "tool", toolName: "markQuestions" }
             : "auto",
     // Hafıza kaydından sonra model cevabına devam eder; test, kelime önerisi ya da işaretleme gelince durur (cevabın kendisi)
     stopWhen: [
@@ -165,6 +176,7 @@ export async function POST(req: Request) {
       hasToolCall("createQuiz"),
       hasToolCall("proposeWords"),
       hasToolCall("markQuestions"),
+      hasToolCall("markPages"),
       hasToolCall("writeNote"),
     ],
     // Geçmiş mesajlar OpenAI'da saklanan kimlikle değil içerikle gönderilir; yarıda kalan
@@ -204,6 +216,11 @@ const wordsChunkSystem = (request = "") =>
   `Bir belgenin bir parçasındasın; bulduklarından sonra kelime listesi hazırlanacak. Kullanıcının isteği: "${request.slice(0, 500)}"
 Bu parçada isteğe uyan kelime/ifadeleri bul. Her biri için bir satır yaz: kelime | geçtiği cümle (metinden aynen) | sayfa ([s. N] işaretinden). Aynı kelimeyi bir kez yaz. Hiç yoksa yalnızca "yok" yaz. Metinde olmayanı ekleme.`;
 
+/** Sayfalara soruda parçalar özetlenmez; soruyla ilgili yerler sayfalarıyla ayrıntılı çıkarılır. */
+const questionChunkSystem = (request = "") =>
+  `Bir belgenin bir parçasındasın; bulduklarından sonra kullanıcının sorusu tüm belgeye göre cevaplanacak. Kullanıcının sorusu: "${request.slice(0, 2000)}"
+Bu parçada soruyla ilgili her bilgiyi ayrıntısıyla, mümkünse metinden aynen alıntılayarak ve sayfasını ([s. N] işaretinden) belirterek yaz. Sorunun cevabı için gerekebilecek bağlamı (bölüm başlığı, tanım, örnek) da ekle. Hiç ilgili bir şey yoksa yalnızca "yok" yaz. Metinde olmayanı ekleme.`;
+
 /** Kısa belgeyi doğrudan, uzun belgeyi önce parça parça özetleyip gönderir. */
 async function buildSkillPrompt(
   skill: SkillRequest,
@@ -226,7 +243,12 @@ async function buildSkillPrompt(
       const { text } = await generateText({
         model,
         abortSignal: signal,
-        system: skill.name === "kelime" ? wordsChunkSystem(skill.request) : CHUNK_SYSTEM,
+        system:
+          skill.name === "kelime"
+            ? wordsChunkSystem(skill.request)
+            : skill.name === "belge"
+              ? questionChunkSystem(skill.request)
+              : CHUNK_SYSTEM,
         prompt: formatPages(pages),
       });
       summaries[i] = `## ${range}\n${text}`;

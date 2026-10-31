@@ -40,7 +40,27 @@ export const PanelRightIcon = () => (
   </Icon>
 );
 
-export const BookmarkIcon = ({ filled }: { filled?: boolean }) => (
+export const SplitIcon = () => (
+  <Icon>
+    <rect x="3" y="4" width="18" height="16" rx="1.5" />
+    <path d="M12 4v16M15.5 12h2.5M16.75 10.75v2.5" />
+  </Icon>
+);
+
+export const ClosePaneIcon = () => (
+  <Icon>
+    <rect x="3" y="4" width="18" height="16" rx="1.5" />
+    <path d="m9.5 9.5 5 5M14.5 9.5l-5 5" />
+  </Icon>
+);
+
+export const SwapPanesIcon = () => (
+  <Icon>
+    <path d="M4 8h15M15.5 4.5 19 8l-3.5 3.5M20 16H5M8.5 12.5 5 16l3.5 3.5" />
+  </Icon>
+);
+
+export const BookmarkIcon =({ filled }: { filled?: boolean }) => (
   <Icon fill={filled ? "currentColor" : "none"}>
     <path d="M6 3.5h12v17l-6-4.5-6 4.5z" />
   </Icon>
@@ -118,6 +138,41 @@ export const EraserIcon = () => (
   <Icon>
     <path d="m7 20-3.3-3.3a1.5 1.5 0 0 1 0-2.1L13.6 4.7a1.5 1.5 0 0 1 2.1 0l4.6 4.6a1.5 1.5 0 0 1 0 2.1L11.7 20z" />
     <path d="M7 20h13M9 11.5l5.5 5.5" />
+  </Icon>
+);
+
+export const NoteIcon = () => (
+  <Icon>
+    <path d="M5 4h14v10l-6 6H5z" />
+    <path d="M19 14h-6v6" />
+  </Icon>
+);
+
+export const ListIcon = () => (
+  <Icon>
+    <path d="M9 6h11M9 12h11M9 18h11" />
+    <path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01" strokeWidth="2.4" />
+  </Icon>
+);
+
+export const NewNoteIcon = () => (
+  <Icon>
+    <path d="M11 4H5.5A1.5 1.5 0 0 0 4 5.5v13A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V13" />
+    <path d="M17.5 3.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z" />
+  </Icon>
+);
+
+export const PinIcon = ({ filled }: { filled?: boolean }) => (
+  <Icon>
+    <path d="M9 4h6l-1 5 3 3v2H7v-2l3-3z" fill={filled ? "currentColor" : "none"} />
+    <path d="M12 14v6" />
+  </Icon>
+);
+
+export const TrashIcon = () => (
+  <Icon>
+    <path d="M4 7h16M10 7V4.5h4V7M6 7l1 13h10l1-13" />
+    <path d="M10 11v5M14 11v5" />
   </Icon>
 );
 
