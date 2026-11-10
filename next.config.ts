@@ -4,6 +4,9 @@ const nextConfig: NextConfig = {
   /* config options here */
   cacheComponents: true,
   partialPrefetching: true,
+  experimental: {
+    agentUpgrade: "security",
+  },
   // Service worker her açılışta yeniden denetlensin; yoksa güncellemeler geç gelir
   async headers() {
     return [
