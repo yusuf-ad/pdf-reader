@@ -1,11 +1,51 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { downloadBackup, restoreBackup } from "@/lib/backup";
 import type { PaperStyle } from "@/lib/blank-book";
 import { PAPER_STYLES } from "@/lib/paper-styles";
 import type { Book } from "@/lib/file-store";
 import { loadProgress } from "@/lib/reading-state";
+
+const DATA_NOTICE_TEXT = {
+  title: "Verilerin bu tarayıcıda",
+  message:
+    "Kitapların ve notların yalnızca bu tarayıcıda saklanır. Tarayıcı verilerini silersen ya da başka cihaza geçersen kaybolur — düzenli yedek al.",
+  backupHint: "Yedek dosyası PDF’leri içermez; kitap dosyalarını da ayrıca sakla.",
+  dismiss: "Anladım",
+} as const;
+
+const DATA_NOTICE_DISMISSED_KEY = "pdf-reader:data-notice-dismissed";
+const dataNoticeListeners = new Set<() => void>();
+
+function isDataNoticeDismissed() {
+  try {
+    return localStorage.getItem(DATA_NOTICE_DISMISSED_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function subscribeDataNotice(listener: () => void) {
+  dataNoticeListeners.add(listener);
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === DATA_NOTICE_DISMISSED_KEY || event.key === null) listener();
+  };
+  window.addEventListener("storage", onStorage);
+  return () => {
+    dataNoticeListeners.delete(listener);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
+function dismissDataNotice() {
+  try {
+    localStorage.setItem(DATA_NOTICE_DISMISSED_KEY, "true");
+  } catch {
+    return;
+  }
+  dataNoticeListeners.forEach((listener) => listener());
+}
 
 type Sort = "recent" | "title" | "progress";
 
@@ -73,7 +113,8 @@ export default function Library({
 
   if (books.length === 0) {
     return (
-      <div className="mx-auto flex h-full max-w-md flex-col justify-center px-8">
+      <div className="mx-auto flex min-h-full max-w-md flex-col justify-center px-8 py-8">
+        <DataLocalityNotice />
         <h1 className="font-serif text-3xl leading-tight">Oku, takıldığın kelimeyi seç.</h1>
         <p className="mt-3 leading-relaxed text-muted">
           Seçtiğin kelimenin o cümledeki anlamını ve cümlenin çevirisini gösterir, ikisini birlikte
@@ -104,6 +145,7 @@ export default function Library({
 
   return (
     <div className="mx-auto max-w-6xl px-10 py-10">
+      <DataLocalityNotice />
       <header className="flex flex-wrap items-end gap-x-8 gap-y-4">
         <div className="mr-auto">
           <h1 className="font-serif text-3xl">Kitaplık</h1>
@@ -236,6 +278,34 @@ export default function Library({
   );
 }
 
+function DataLocalityNotice() {
+  const dismissed = useSyncExternalStore(
+    subscribeDataNotice,
+    isDataNoticeDismissed,
+    () => false,
+  );
+
+  if (dismissed) return null;
+
+  return (
+    <aside aria-label={DATA_NOTICE_TEXT.title} className="mb-8 border border-rule bg-sheet p-4">
+      <p className="font-serif text-lg">{DATA_NOTICE_TEXT.title}</p>
+      <p className="mt-2 text-sm leading-relaxed text-muted">{DATA_NOTICE_TEXT.message}</p>
+      <p className="mt-2 text-xs leading-relaxed text-muted">{DATA_NOTICE_TEXT.backupHint}</p>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+        <BackupButtons />
+        <button
+          type="button"
+          onClick={dismissDataNotice}
+          className="text-sm text-muted underline underline-offset-4 hover:text-ink"
+        >
+          {DATA_NOTICE_TEXT.dismiss}
+        </button>
+      </div>
+    </aside>
+  );
+}
+
 /** Boş defterin adını, sayfa sayısını ve kâğıt türünü sorar. */
 function BlankBookForm({
   onCreate,
@@ -317,7 +387,7 @@ function BackupButtons() {
   const [message, setMessage] = useState<string | null>(null);
 
   return (
-    <span className="inline-flex items-center gap-3 text-sm">
+    <span className="inline-flex flex-wrap items-center gap-3 text-sm">
       <button
         onClick={() => downloadBackup().catch(() => setMessage("Yedek alınamadı."))}
         title="Kelimeler, notlar, vurgular, okuma durumu ve sorular tek bir dosyaya kaydedilir"
