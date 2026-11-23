@@ -67,6 +67,9 @@ type Props = {
 
 const title = (b: Book) => b.name.replace(/\.pdf$/i, "").replace(/[_]+/g, " ");
 
+// "Konumu aç" yalnızca uygulama yerelde çalışırken (sunucu kullanıcının bilgisayarıyken) işe yarar
+const LOCAL_REVEAL = process.env.NODE_ENV !== "production" || process.env.NEXT_PUBLIC_ENABLE_LOCAL_REVEAL === "1";
+
 export default function Library({
   books,
   currentKey,
@@ -262,13 +265,13 @@ export default function Library({
                 >
                   Kaldır
                 </button>
-                <button
+                {LOCAL_REVEAL && <button
                   onClick={() => revealBook(book)}
                   title="PDF'in bulunduğu klasörü dosya gezgininde açar"
                   className="bg-sheet/90 px-1.5 py-0.5 text-[11px] text-muted hover:text-ink"
                 >
                   {revealing?.key === book.key ? revealing.text : "Konumu aç"}
-                </button>
+                </button>}
               </div>
             </li>
           ))}
