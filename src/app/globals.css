@@ -149,6 +149,121 @@ body {
   transition: background-color 0.2s, color 0.2s;
 }
 
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.app-content {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.desktop-hint {
+  display: none;
+}
+
+@media (width < 768px) {
+  .desktop-hint {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--sheet);
+    padding: 8px 12px 8px 16px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .desktop-hint p {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .desktop-hint button {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--rule);
+    font-size: 20px;
+  }
+
+  /* Keep saved desktop splits readable when reopened on a phone. */
+  .reader-split {
+    flex-direction: column;
+  }
+
+  .reader-split > [role="separator"] {
+    display: none;
+  }
+
+  .reader-pane {
+    flex-basis: 0 !important;
+  }
+
+  .reader-pane + .reader-pane {
+    border-top: 1px solid var(--rule);
+  }
+
+  .reader-side-panel {
+    display: none;
+  }
+
+  /* Overflow stays in the toolbar; page navigation remains at its start. */
+  .reader > main > header {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+
+  .reader > main > header > * {
+    flex-shrink: 0;
+  }
+
+  .reader > main > header > span.truncate {
+    flex: 0 0 96px;
+  }
+
+  .reader > main > header > button:first-child,
+  .reader > main > header > button:last-of-type {
+    display: none;
+  }
+
+  .reader-pages {
+    padding: 16px 12px;
+    overscroll-behavior: contain;
+  }
+
+  .reader-library > div {
+    height: auto;
+    min-height: 100%;
+    max-width: 100%;
+    padding: 24px 16px;
+    overflow-wrap: anywhere;
+  }
+
+  .reader-library header > *,
+  .reader-library form > *,
+  .reader-library input {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .reader-library header > div,
+  .reader-library form {
+    flex-wrap: wrap;
+  }
+
+  .reader-library ul.grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(140px, 100%), 1fr));
+    gap: 24px 16px;
+  }
+}
+
 .react-pdf__Page {
   background: transparent !important;
 }

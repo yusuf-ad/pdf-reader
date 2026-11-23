@@ -125,7 +125,7 @@ export default function SplitView() {
   };
 
   return (
-    <div ref={rootRef} className="flex h-screen">
+    <div ref={rootRef} className="reader-split flex h-full min-h-0">
       {split && (
         <div
           role="separator"
@@ -172,7 +172,7 @@ export default function SplitView() {
               split ? { order: pos * 2, flexBasis: `${(pos === 0 ? ratio : 1 - ratio) * 100}%` } : undefined
             }
             // Dar bölmede taşan araç çubuğu yandakinin üstüne binmesin
-            className="relative min-w-0 flex-1 overflow-hidden"
+            className="reader-pane relative min-h-0 min-w-0 flex-1 overflow-hidden"
           >
             <Reader
               pane={{
