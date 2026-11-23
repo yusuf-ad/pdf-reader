@@ -82,7 +82,7 @@ section("Write directly on the page", "Use D for the pen, M for the marker, T to
 text("Small experiment: highlight one observation on page 1, then write a note explaining why it matters.", { size: 13, color: accent });
 
 start("03 / A reading companion", "Ask a better question.", "Your own AI key unlocks explanations, translations and quizzes.");
-section("Add a free Gemini key", "Click \"Add AI key\" in the toolbar (or the button in the getting-started tips). Choose Google Gemini, open the key page below, create a key with your Google account, then paste it into the API key field and save. Gemini has a free tier; availability and usage limits depend on Google's terms.");
+section("Add your own Gemini key", "Click \"Add AI key\" in the toolbar (or the button in the getting-started tips). Choose Google Gemini, open the key page below, create a key with your Google account, then paste it into the API key field and save. The key is yours, not provided by this app; Google offers a free tier with usage limits set by Google.");
 text("https://aistudio.google.com/apikey", { font: sans, size: 13, color: accent, gap: 22 });
 section("Ask about a selection", "Select a passage and press Ctrl + K to open the chat with that context. Try: 'Why did Mira move only one pot?' You can also double-click a word to request its meaning in context and a sentence translation.");
 section("Ask about a page", "Open chat with Ctrl + K and ask about the current page, or specify the page number in your prompt. Try: 'Summarize page 1 in three points.' Check the response against the PDF; AI can make mistakes.");

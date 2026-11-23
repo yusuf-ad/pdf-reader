@@ -7,7 +7,7 @@
 **A calm PDF reader with an AI study partner.**
 Highlight, take notes, ask questions about the page you're on, and turn chapters into quizzes. Your books never leave your browser.
 
-[**Live demo →**](https://YOUR-DEMO-URL.vercel.app) &nbsp;·&nbsp; [Get a free Gemini key](https://aistudio.google.com/apikey) &nbsp;·&nbsp; English / Türkçe
+[**Live demo →**](https://YOUR-DEMO-URL.vercel.app) &nbsp;·&nbsp; [Create your own Gemini key](https://aistudio.google.com/apikey) &nbsp;·&nbsp; English / Türkçe
 
 <!-- Replace with a 20–40s screen recording (docs/demo.gif) -->
 <img src="docs/demo.gif" alt="Okuma demo: highlighting, asking the AI and making a quiz" width="860" />
@@ -38,13 +38,13 @@ Reading a dense book usually means three apps: a PDF viewer, a notes app, and a 
 - Slash commands: summarize a range of pages, generate a quiz, build a vocabulary list, check your answers on a page of exercises
 - Tap a word to translate it in the context of its sentence and save it to your word list
 - Optional web search for questions that need up-to-date information
-- Works with **Google Gemini** (free tier) or **OpenAI**
+- Works with your own **Google Gemini** or **OpenAI** key (Google offers a free tier for Gemini; the app itself provides no keys)
 
 ## Try it in 60 seconds
 
 1. Open the [live demo](https://YOUR-DEMO-URL.vercel.app). A short welcome PDF opens with a few tips.
 2. Reading, highlighting and notes work right away; no account, no key.
-3. For AI features, click the **key icon** in the toolbar, choose **Gemini**, and paste a key from [Google AI Studio](https://aistudio.google.com/apikey) (sign in with Google → *Create API key* → copy). It's free and takes about 30 seconds.
+3. For AI features, click **Add AI key** in the toolbar, choose **Gemini**, and paste your own key from [Google AI Studio](https://aistudio.google.com/apikey) (sign in with Google → *Create API key* → copy). Google's free tier is enough to try everything; the key is yours, the app doesn't provide one.
 
 ## Privacy
 
@@ -64,7 +64,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000 and add your key from the key icon. No `.env` is needed.
+Open http://localhost:3000 and add your key with **Add AI key**. No `.env` is needed.
 
 To deploy, import the repo on [Vercel](https://vercel.com/new) with the default settings. Don't add any API keys as environment variables; the app doesn't read them.
 
