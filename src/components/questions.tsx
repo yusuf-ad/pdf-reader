@@ -1,5 +1,6 @@
 "use client";
 
+import { useLang, useT } from "@/lib/i18n";
 import { useEffect, useRef, useState } from "react";
 import { hasAiKey, openAiSettings, useAiSettings } from "@/lib/ai-settings";
 import {
@@ -17,11 +18,6 @@ import {
   type NewQuestion,
   type Question,
 } from "@/lib/questions";
-
-const AI_COPY = {
-  addKey: "AI özellikleri için API key ekle",
-  settings: "API key ekle / düzenle",
-};
 
 /** PDF'ten kırpılan görüntüler sayfa gibi temaya uyar; dışarıdan yapıştırılanlar olduğu gibi kalır. */
 const imageFilter = (page: number | null) => (page ? "[filter:var(--page-filter)]" : "");
@@ -67,6 +63,7 @@ function FolderPicker({
   onChange: (id: string | null) => void;
   autoFocus?: boolean;
 }) {
+  const t = useT("ai");
   const folders = useFolders();
   const [creating, setCreating] = useState(false);
 
@@ -80,7 +77,7 @@ function FolderPicker({
         }}
       >
         <NameInput
-          placeholder="Klasör adı, ör. Adverbial Clauses testi"
+          placeholder={t("questionsFolderPlaceholder")}
           onDone={(name) => {
             setCreating(false);
             if (name) onChange(createFolder(name).id);
@@ -100,13 +97,13 @@ function FolderPicker({
       }}
       className={`${inputClass} cursor-pointer`}
     >
-      <option value="">Klasörsüz</option>
+      <option value="">{t("questionsNoFolder")}</option>
       {folders.map((f) => (
         <option key={f.id} value={f.id}>
           {f.name}
         </option>
       ))}
-      <option value={NEW_FOLDER}>+ Yeni klasör…</option>
+      <option value={NEW_FOLDER}>{t("questionsNewFolderOption")}</option>
     </select>
   );
 }
@@ -127,6 +124,7 @@ export function QuestionDialog({
   /** Soru olarak kaydetmeden açık sayfaya görsel olarak ekle (PDF açıkken) */
   onAddToPdf?: () => void;
 }) {
+  const t = useT("ai");
   const [folderId, setFolderId] = useState<string | null>(getLastFolder);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
@@ -142,12 +140,12 @@ export function QuestionDialog({
       onSaved();
     } catch (err) {
       setSaving(false);
-      alert(`Soru kaydedilemedi: ${(err as Error).message}`);
+      alert(t("questionsSaveError", { error: (err as Error).message }));
     }
   };
 
   return (
-    <Modal label="Soruyu kaydet" onClose={onClose}>
+    <Modal label={t("questionsSaveTitle")} onClose={onClose}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -156,23 +154,23 @@ export function QuestionDialog({
         className="flex min-h-0 flex-col"
       >
         <div className="border-b border-rule px-6 py-4">
-          <h2 className="font-serif text-xl">Yapamadığım soru</h2>
+          <h2 className="font-serif text-xl">{t("questionsTitle")}</h2>
           <p className="mt-1 text-xs text-muted">
-            {draft.bookName?.replace(/\.pdf$/i, "") ?? "Yapıştırılan görüntü"}
-            {draft.page && ` · s. ${draft.page}`}
+            {draft.bookName?.replace(/\.pdf$/i, "") ?? t("questionsPastedImage")}
+            {draft.page && t("pageReferenceDot", { page: draft.page })}
           </p>
         </div>
         <div className="min-h-0 flex-1 overflow-auto bg-paper p-4">
           {/* eslint-disable-next-line @next/next/no-img-element -- yerel blob görüntüsü */}
-          <img src={imageUrl(draft.image)} alt="Kırpılan soru" className={`mx-auto max-h-[45vh] ${imageFilter(draft.page)}`} />
+          <img src={imageUrl(draft.image)} alt={t("questionsCropAlt")} className={`mx-auto max-h-[45vh] ${imageFilter(draft.page)}`} />
         </div>
         <div className="space-y-4 px-6 py-4 text-sm">
           <label className="block">
-            <span className="text-xs text-muted">Klasör</span>
+            <span className="text-xs text-muted">{t("questionsFolder")}</span>
             <FolderPicker value={folderId} onChange={setFolderId} />
           </label>
           <label className="block">
-            <span className="text-xs text-muted">Not</span>
+            <span className="text-xs text-muted">{t("questionsNote")}</span>
             <textarea
               autoFocus
               value={note}
@@ -184,40 +182,40 @@ export function QuestionDialog({
                 }
               }}
               rows={2}
-              placeholder="Neden yapamadım? (formülü bilmiyordum, işlem hatası…)"
+              placeholder={t("questionsNotePlaceholder")}
               className={`${inputClass} resize-none`}
             />
           </label>
         </div>
         <div className="flex items-center justify-end gap-3 border-t border-rule px-6 py-3 text-sm">
-          <span className="mr-auto text-xs text-muted">Enter: kaydet · Esc: vazgeç</span>
+          <span className="mr-auto text-xs text-muted">{t("questionsSaveShortcut")}</span>
           <button type="button" onClick={onClose} className="px-3 py-1.5 text-muted hover:text-ink">
-            Vazgeç
+            {t("actionCancel")}
           </button>
           {onAddToPdf && (
             <button
               type="button"
               onClick={onAddToPdf}
-              title="Görseli açık sayfaya yapıştır; taşınabilir, boyutlandırılabilir, kaydedince PDF'e yazılır"
+              title={t("questionsAddToPdfHint")}
               className="border border-rule px-3 py-1.5 transition-colors hover:border-ink"
             >
-              PDF&apos;e ekle
+              {t("questionsAddToPdf")}
             </button>
           )}
           <button
             type="button"
             onClick={onAsk}
-            title="Kaydetmeden sohbete gönder; görsel eklenir, istersen sorunu yazarsın"
+            title={t("questionsAskHint")}
             className="flex items-center gap-1.5 border border-rule px-3 py-1.5 transition-colors hover:border-ink"
           >
-            Sohbete sor <kbd className="font-mono text-[11px] text-muted">Ctrl K</kbd>
+            {t("questionsAsk")} <kbd className="font-mono text-[11px] text-muted">Ctrl K</kbd>
           </button>
           <button
             type="submit"
             disabled={saving}
             className="border border-ink px-4 py-1.5 transition-colors hover:bg-ink hover:text-sheet disabled:opacity-50"
           >
-            Kaydet
+            {t("actionSave")}
           </button>
         </div>
       </form>
@@ -227,10 +225,10 @@ export function QuestionDialog({
 
 type Status = "open" | "solved" | "all";
 
-const STATUSES: [Status, string][] = [
-  ["open", "Çözülmedi"],
-  ["solved", "Çözüldü"],
-  ["all", "Hepsi"],
+const STATUSES: [Status, "questionsOpen" | "questionsSolved" | "questionsAll"][] = [
+  ["open", "questionsOpen"],
+  ["solved", "questionsSolved"],
+  ["all", "questionsAll"],
 ];
 
 /** Klasör listesi yerine açık olan görünüm: bir klasör ya da hazır gruplardan biri */
@@ -274,6 +272,7 @@ export function QuestionsTab({
   onOpenFile: (file: File) => void;
   onAskImage: (image: Blob) => void;
 }) {
+  const t = useT("ai");
   const questions = useQuestions();
   const folders = useFolders();
   const [view, setViewState] = useState<View | null>(rememberedView);
@@ -295,10 +294,10 @@ export function QuestionsTab({
         onClick={onStartCrop}
         className="w-full border border-rule px-3 py-1.5 text-left transition-colors hover:border-ink"
       >
-        Sayfadan soru kırp <span className="float-right font-mono text-xs text-muted">Q</span>
+        {t("questionsCrop")}<span className="float-right font-mono text-xs text-muted">Q</span>
       </button>
       <p className="text-xs leading-relaxed text-muted">
-        Ya da bir ekran görüntüsünü <span className="font-mono">Ctrl V</span> ile yapıştır.
+        {t("questionsPasteBefore")}<span className="font-mono">Ctrl V</span> {t("questionsPasteAfter")}
       </p>
     </div>
   );
@@ -320,19 +319,18 @@ export function QuestionsTab({
       {header}
       {questions.length === 0 && folders.length === 0 ? (
         <p className="px-5 py-6 text-muted">
-          Henüz kaydedilmiş soru yok. Yapamadığın soruyu sayfadan kırp, bir klasöre koy (ör. bir testin
-          adı); sonra buradan tekrar bakarsın.
+          {t("questionsEmpty")}
         </p>
       ) : (
         <>
           <ul className="border-b border-rule py-2 text-muted">
-            {book && <Row label="Bu kitaptan" list={fromBook} onOpen={() => setView({ kind: "book" })} />}
-            <Row label="Tüm sorular" list={questions} onOpen={() => setView({ kind: "all" })} />
+            {book && <Row label={t("questionsFromBook")} list={fromBook} onOpen={() => setView({ kind: "book" })} />}
+            <Row label={t("questionsAllQuestions")} list={questions} onOpen={() => setView({ kind: "all" })} />
             {loose.length > 0 && (
-              <Row label="Klasörsüz" list={loose} onOpen={() => setView({ kind: "none" })} />
+              <Row label={t("questionsNoFolder")} list={loose} onOpen={() => setView({ kind: "none" })} />
             )}
           </ul>
-          <p className="px-5 pt-3 text-xs text-muted">Klasörler</p>
+          <p className="px-5 pt-3 text-xs text-muted">{t("questionsFolders")}</p>
           <ul className="py-1">
             {folders.map((f) => (
               <Row
@@ -340,7 +338,7 @@ export function QuestionsTab({
                 label={f.name}
                 list={questions.filter((q) => q.folderId === f.id)}
                 onOpen={() => setView({ kind: "folder", id: f.id })}
-                title="çözülmedi / toplam"
+                title={t("questionsCountHint")}
               />
             ))}
           </ul>
@@ -349,7 +347,7 @@ export function QuestionsTab({
       <div className="px-5 pb-4">
         {creating ? (
           <NameInput
-            placeholder="Klasör adı, ör. Adverbial Clauses testi"
+            placeholder={t("questionsFolderPlaceholder")}
             onDone={(name) => {
               setCreating(false);
               if (name) setView({ kind: "folder", id: createFolder(name).id });
@@ -357,7 +355,7 @@ export function QuestionsTab({
           />
         ) : (
           <button onClick={() => setCreating(true)} className="py-1 text-muted hover:text-ink">
-            + Yeni klasör
+            {t("questionsNewFolder")}
           </button>
         )}
       </div>
@@ -415,6 +413,7 @@ function FolderView({
   onOpenFile: (file: File) => void;
   onAskImage: (image: Blob) => void;
 }) {
+  const t = useT("ai");
   const questions = useQuestions();
   const folders = useFolders();
   const [status, setStatus] = useState<Status>("open");
@@ -423,7 +422,7 @@ function FolderView({
   const [making, setMaking] = useState(false);
 
   const folder = view.kind === "folder" ? folders.find((f) => f.id === view.id) : undefined;
-  const title = folder?.name ?? { book: "Bu kitaptan", all: "Tüm sorular", none: "Klasörsüz", folder: "" }[view.kind];
+  const title = folder?.name ?? { book: t("questionsFromBook"), all: t("questionsAllQuestions"), none: t("questionsNoFolder"), folder: "" }[view.kind];
   const inView = questions.filter((q) =>
     view.kind === "folder"
       ? q.folderId === view.id
@@ -451,7 +450,7 @@ function FolderView({
       const { questionsToPdf } = await import("@/lib/questions-pdf");
       onOpenFile(await questionsToPdf(title, ordered));
     } catch (err) {
-      alert(`PDF oluşturulamadı: ${(err as Error).message}`);
+      alert(t("questionsPdfError", { error: (err as Error).message }));
     } finally {
       setMaking(false);
     }
@@ -461,7 +460,7 @@ function FolderView({
     <>
       <div className="sticky top-0 z-10 space-y-2 border-b border-rule bg-sheet px-5 py-3">
         <button onClick={onBack} className="text-xs text-muted hover:text-ink">
-          ← Klasörler
+          {t("questionsBack")}
         </button>
         {renaming && folder ? (
           <NameInput
@@ -477,18 +476,18 @@ function FolderView({
             {folder && (
               <>
                 <button onClick={() => setRenaming(true)} className="shrink-0 text-xs text-muted hover:text-ink">
-                  Adlandır
+                  {t("questionsRename")}
                 </button>
                 <button
                   onClick={() => {
-                    if (confirm(`"${folder.name}" klasörü silinsin mi? İçindeki sorular silinmez, klasörsüz kalır.`)) {
+                    if (confirm(t("questionsDeleteFolderConfirm", { name: folder.name }))) {
                       deleteFolder(folder.id);
                       onBack();
                     }
                   }}
                   className="shrink-0 text-xs text-muted hover:text-accent"
                 >
-                  Sil
+                  {t("actionDelete")}
                 </button>
               </>
             )}
@@ -501,7 +500,7 @@ function FolderView({
               onClick={() => setStatus(id)}
               className={status === id ? "text-ink underline underline-offset-4" : "text-muted hover:text-ink"}
             >
-              {label}
+              {t(label)}
             </button>
           ))}
           <span className="ml-auto tabular-nums text-muted">{countLabel(inView)}</span>
@@ -510,10 +509,10 @@ function FolderView({
           <button
             onClick={makePdf}
             disabled={making}
-            title="Listedeki soruları alt alta dizip tek bir PDF yapar ve okuyucuda açar (kitaplığa eklenir)"
+            title={t("questionsPdfHint")}
             className="w-full border border-rule px-3 py-1.5 text-left text-xs transition-colors hover:border-ink disabled:animate-pulse"
           >
-            {making ? "PDF hazırlanıyor…" : `Bu ${items.length} soruyu PDF olarak aç`}
+            {making ? t("questionsPdfPreparing") : t("questionsOpenPdf", { n: items.length })}
           </button>
         )}
       </div>
@@ -522,11 +521,11 @@ function FolderView({
         <p className="px-5 py-6 text-muted">
           {inView.length === 0
             ? folder
-              ? "Bu klasör boş. Burası açıkken kırptığın sorular bu klasöre önerilir."
-              : "Burada soru yok."
+              ? t("questionsFolderEmpty")
+              : t("questionsNone")
             : status === "open"
-              ? "Hepsini çözmüşsün."
-              : "Bu filtrede soru yok."}
+              ? t("questionsAllSolved")
+              : t("questionsFilterEmpty")}
         </p>
       ) : (
         <ul className="space-y-1 py-2">
@@ -536,16 +535,16 @@ function FolderView({
                 <span className="flex gap-2 text-xs text-muted">
                   <span className="min-w-0 flex-1 truncate">
                     {view.kind === "folder"
-                      ? (q.bookName?.replace(/\.pdf$/i, "") ?? "Yapıştırılan görüntü")
-                      : (folderName(q.folderId) ?? "Klasörsüz")}
+                      ? (q.bookName?.replace(/\.pdf$/i, "") ?? t("questionsPastedImage"))
+                      : (folderName(q.folderId) ?? t("questionsNoFolder"))}
                   </span>
-                  {q.page && <span className="tabular-nums">s. {q.page}</span>}
+                  {q.page && <span className="tabular-nums">{t("pageReference", { page: q.page! })}</span>}
                   {q.status === "solved" && <span className="text-ink">✓</span>}
                 </span>
                 {/* eslint-disable-next-line @next/next/no-img-element -- yerel blob görüntüsü */}
                 <img
                   src={imageUrl(q.image)}
-                  alt="Soru"
+                  alt={t("chatQuestion")}
                   className={`mt-1 max-h-40 w-full border border-rule object-contain object-top-left ${imageFilter(q.page)} ${
                     q.status === "solved" ? "opacity-50" : ""
                   }`}
@@ -590,6 +589,8 @@ function QuestionViewer({
   onAsk: () => void;
   onClose: () => void;
 }) {
+  const t = useT("ai");
+  const lang = useLang();
   const [note, setNote] = useState(q.note);
   const settings = useAiSettings();
 
@@ -600,27 +601,27 @@ function QuestionViewer({
   };
 
   return (
-    <Modal label="Soru" onClose={close}>
+    <Modal label={t("chatQuestion")} onClose={close}>
       <div className="flex items-baseline gap-3 border-b border-rule px-6 py-3 text-xs text-muted">
         <span className="min-w-0 flex-1 truncate">
-          {q.bookName?.replace(/\.pdf$/i, "") ?? "Yapıştırılan görüntü"}
-          {q.page && ` · s. ${q.page}`} · {new Date(q.createdAt).toLocaleDateString("tr")}
+          {q.bookName?.replace(/\.pdf$/i, "") ?? t("questionsPastedImage")}
+          {q.page && t("pageReferenceDot", { page: q.page })} · {new Date(q.createdAt).toLocaleDateString(lang)}
         </span>
         <button onClick={close} className="hover:text-ink">
-          Kapat
+          {t("actionClose")}
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-auto bg-paper p-4">
         {/* eslint-disable-next-line @next/next/no-img-element -- yerel blob görüntüsü */}
-        <img src={imageUrl(q.image)} alt="Soru" className={`mx-auto ${imageFilter(q.page)}`} />
+        <img src={imageUrl(q.image)} alt={t("chatQuestion")} className={`mx-auto ${imageFilter(q.page)}`} />
       </div>
       <div className="grid grid-cols-[180px_1fr] gap-x-4 px-6 py-4 text-sm">
         <label className="block">
-          <span className="text-xs text-muted">Klasör</span>
+          <span className="text-xs text-muted">{t("questionsFolder")}</span>
           <FolderPicker value={q.folderId ?? null} onChange={(folderId) => updateQuestion(q.id, { folderId })} />
         </label>
         <label className="block">
-          <span className="text-xs text-muted">Not</span>
+          <span className="text-xs text-muted">{t("questionsNote")}</span>
           <textarea
             value={note}
             onChange={(e) => setNote(e.target.value)}
@@ -632,18 +633,18 @@ function QuestionViewer({
       <div className="flex items-center gap-3 border-t border-rule px-6 py-3 text-sm">
         <button
           onClick={() => {
-            if (confirm("Bu soru silinsin mi?")) {
+            if (confirm(t("questionsDeleteConfirm"))) {
               removeQuestion(q.id);
               onClose();
             }
           }}
           className="text-muted hover:text-accent"
         >
-          Sil
+          {t("actionDelete")}
         </button>
         {canGoTo && (
           <button onClick={onGoTo} className="text-muted hover:text-ink">
-            Sayfaya git
+            {t("questionsGoToPage")}
           </button>
         )}
         <button
@@ -654,7 +655,7 @@ function QuestionViewer({
           }}
           className="text-muted hover:text-ink"
         >
-          {settings?.key ? "Sohbete sor" : AI_COPY.settings}
+          {settings?.key ? t("questionsAsk") : t("chatSettings")}
         </button>
         <button
           onClick={() => updateQuestion(q.id, { status: q.status === "solved" ? "open" : "solved" })}
@@ -664,10 +665,10 @@ function QuestionViewer({
               : "border-ink hover:bg-ink hover:text-sheet"
           }`}
         >
-          {q.status === "solved" ? "Tekrar çözülmedi yap" : "Çözdüm ✓"}
+          {q.status === "solved" ? t("questionsMarkOpen") : t("questionsMarkSolved")}
         </button>
       </div>
-      {!settings?.key && <p className="px-6 pb-3 text-xs text-muted">{AI_COPY.addKey}</p>}
+      {!settings?.key && <p className="px-6 pb-3 text-xs text-muted">{t("chatAddKey")}</p>}
     </Modal>
   );
 }

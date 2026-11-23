@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/lib/i18n";
 import { useMemo, useState } from "react";
 import { sameWord, useSavedWords } from "@/lib/use-saved-words";
 import type { ProposedWord } from "@/lib/words";
@@ -37,13 +38,14 @@ const toWord = (w: PartialWord | undefined): ProposedWord | null =>
  * eklenmez: kullanıcı önizlemede istemediklerinin işaretini kaldırıp onaylar.
  */
 export default function WordProposal({ input, ready, error, fileName, onGoTo }: Props) {
+  const t = useT("ai");
   const { words: saved, addMany, removeMany } = useSavedWords();
   const words = useMemo(() => (input?.words ?? []).map(toWord).filter((w) => w !== null), [input]);
   // Varsayılan hepsi seçili; kullanıcının kaldırdıkları tutulur
   const [unchecked, setUnchecked] = useState<Set<number>>(() => new Set());
   const [added, setAdded] = useState<string[] | null>(null);
 
-  if (error) return <p className="text-sm text-accent">Kelimeler önerilemedi: {error}</p>;
+  if (error) return <p className="text-sm text-accent">{t("proposalErrorPrefix")}{error}</p>;
 
   const inList = words.map((w) => saved.some((s) => sameWord(s, w)));
   const selected = words.flatMap((w, i) => (!inList[i] && !unchecked.has(i) ? [i] : []));
@@ -72,11 +74,11 @@ export default function WordProposal({ input, ready, error, fileName, onGoTo }: 
   return (
     <section className="border border-rule bg-sheet px-5 py-4 font-sans">
       <p className="text-xs tracking-wide text-muted uppercase">
-        {ready ? "Kelime listesine eklensin mi?" : "Kelimeler bulunuyor…"}
+        {ready ? t("proposalConfirm") : t("proposalFinding")}
       </p>
       <p className="mt-1 font-serif text-xl leading-snug">{input?.title || "…"}</p>
 
-      {ready && !words.length && <p className="mt-3 text-sm text-muted">Eklenecek kelime bulunamadı.</p>}
+      {ready && !words.length && <p className="mt-3 text-sm text-muted">{t("proposalEmpty")}</p>}
       <ul className="mt-3 divide-y divide-rule">
         {words.map((w, i) => {
           const disabled = !ready || inList[i] || added !== null;
@@ -94,12 +96,12 @@ export default function WordProposal({ input, ready, error, fileName, onGoTo }: 
                   <div className="flex items-baseline gap-2">
                     <span className="font-serif text-[17px]">{w.word}</span>
                     <span className="text-xs text-muted">{w.partOfSpeech}</span>
-                    {inList[i] && <span className="ml-auto text-xs text-muted">✓ listede</span>}
+                    {inList[i] && <span className="ml-auto text-xs text-muted">{t("proposalInList")}</span>}
                   </div>
                   <p className="font-serif text-accent">{w.wordTranslation}</p>
                   {w.synonyms.length > 0 && (
                     <p className="mt-0.5 text-sm text-muted">
-                      <span title="Eş anlamlılar">≈</span> {w.synonyms.join(", ")}
+                      <span title={t("wordsSynonyms")}>≈</span> {w.synonyms.join(", ")}
                     </p>
                   )}
                   {w.sentence && (
@@ -116,7 +118,7 @@ export default function WordProposal({ input, ready, error, fileName, onGoTo }: 
                       }}
                       className="mt-1 text-xs text-muted underline decoration-rule underline-offset-2 hover:text-ink hover:decoration-ink"
                     >
-                      s. {w.page}
+                      {t("pageReference", { page: w.page! })}
                     </button>
                   )}
                 </div>
@@ -131,11 +133,11 @@ export default function WordProposal({ input, ready, error, fileName, onGoTo }: 
           {added !== null ? (
             <>
               <span className="flex-1 text-muted">
-                {stillAdded.length ? `✓ ${stillAdded.length} kelime eklendi` : "Geri alındı"}
+                {stillAdded.length ? t("proposalAdded", { n: stillAdded.length }) : t("chatUndone")}
               </span>
               {stillAdded.length > 0 && (
                 <button onClick={() => removeMany(stillAdded)} className="text-muted underline underline-offset-2 hover:text-ink">
-                  Geri al
+                  {t("chatUndo")}
                 </button>
               )}
             </>
@@ -145,7 +147,7 @@ export default function WordProposal({ input, ready, error, fileName, onGoTo }: 
                 onClick={() => setUnchecked(selected.length === addable.length ? new Set(addable) : new Set())}
                 className="text-muted hover:text-ink"
               >
-                {selected.length === addable.length ? "Hiçbiri" : "Tümü"}
+                {selected.length === addable.length ? t("proposalNone") : t("proposalAll")}
               </button>
               <span className="flex-1" />
               <button
@@ -153,11 +155,11 @@ export default function WordProposal({ input, ready, error, fileName, onGoTo }: 
                 disabled={!selected.length}
                 className="border border-ink px-3 py-1.5 text-sm text-ink transition-colors hover:bg-ink hover:text-sheet disabled:opacity-40"
               >
-                Seçilenleri ekle ({selected.length})
+                {t("proposalAddSelected", { n: selected.length })}
               </button>
             </>
           ) : (
-            <span className="text-muted">Hepsi zaten listende.</span>
+            <span className="text-muted">{t("proposalAlreadySaved")}</span>
           )}
         </div>
       )}

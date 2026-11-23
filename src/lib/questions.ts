@@ -1,5 +1,7 @@
 "use client";
 
+import { translate } from "./i18n";
+
 import { useSyncExternalStore } from "react";
 import { get as getStored, set as setStored, useStored } from "./storage";
 
@@ -287,7 +289,7 @@ export async function cropPages(
   }
 
   const image = await new Promise<Blob>((resolve, reject) =>
-    out.toBlob((b) => (b ? resolve(b) : reject(new Error("Görüntü oluşturulamadı."))), "image/png"),
+    out.toBlob((b) => (b ? resolve(b) : reject(new Error(translate("ai", "questionsImageError")))), "image/png"),
   );
   return { image, sourceWidth: +widest.toFixed(1) };
 }

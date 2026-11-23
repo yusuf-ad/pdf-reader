@@ -1,3 +1,4 @@
+import { translate } from "./i18n";
 // Klasördeki soruları alt alta dizip tek bir PDF yapar (tekrar çözmek için).
 // Her soru tek parça kalır: sayfaya sığmazsa sonraki sayfaya geçer.
 import fontkit from "@cantoo/fontkit";
@@ -29,7 +30,7 @@ async function embed(doc: PDFDocument, blob: Blob): Promise<PDFImage> {
   canvas.getContext("2d")!.drawImage(bitmap, 0, 0);
   bitmap.close();
   const png = await new Promise<Blob>((resolve, reject) =>
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Görüntü çevrilemedi."))), "image/png"),
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error(translate("ai", "questionsImageConvertError")))), "image/png"),
   );
   return doc.embedPng(await png.arrayBuffer());
 }
@@ -67,8 +68,8 @@ export async function questionsToPdf(title: string, questions: Question[]): Prom
       y = PAGE_H - MARGIN;
     }
 
-    const source = [q.bookName?.replace(/\.pdf$/i, ""), q.page && `s. ${q.page}`].filter(Boolean).join(", ");
-    const label = `Soru ${i + 1}${source ? `  ·  ${source}` : ""}`;
+    const source = [q.bookName?.replace(/\.pdf$/i, ""), q.page && translate("ai", "pageReference", { page: q.page })].filter(Boolean).join(", ");
+    const label = translate("ai", "questionsPdfQuestion", { n: i + 1, source: source ? `  ·  ${source}` : "" });
     page.drawText(label, { x: MARGIN, y: y - LABEL_SIZE, size: LABEL_SIZE, font, color: MUTED });
     y -= labelH;
     page.drawImage(image, { x: MARGIN, y: y - h, width: w, height: h });
@@ -84,6 +85,6 @@ export async function questionsToPdf(title: string, questions: Question[]): Prom
   });
 
   const bytes = await doc.save();
-  const name = `${title.replace(/[\\/:*?"<>|]+/g, "-")} - sorular.pdf`;
+  const name = translate("ai", "questionsPdfFilename", { title: title.replace(/[\\/:*?"<>|]+/g, "-") });
   return new File([bytes as BlobPart], name, { type: "application/pdf", lastModified: Date.now() });
 }
