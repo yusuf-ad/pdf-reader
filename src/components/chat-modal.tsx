@@ -70,6 +70,7 @@ import {
   parseMarkRequest,
   parseWordsRequest,
   SKILLS,
+  skillCommand,
   skillLabel,
   type SkillRequest,
 } from "@/lib/skills";
@@ -778,8 +779,8 @@ function ChatWindow({
                 <li>{t("chatExamplePerson")}</li>
               </ul>
               <p className="mt-4">
-                {t("chatCommandsIntro")}<Kbd>/ozet</Kbd>{t("chatSummaryHelp")}<Kbd>/ozet 10-25</Kbd>{t("chatRangeSummaryHelp")}<Kbd>/sayfa</Kbd>{" "}
-                {t("chatPageSummaryHelp")}<Kbd>/test</Kbd>{t("chatQuizHelp")}<Kbd>/test 10-25</Kbd>{t("chatQuizRangeHelp")}
+                {t("chatCommandsIntro")}<Kbd>{skillCommand("ozet")}</Kbd>{t("chatSummaryHelp")}<Kbd>{skillCommand("ozet")} 10-25</Kbd>{t("chatRangeSummaryHelp")}<Kbd>{skillCommand("sayfa")}</Kbd>{" "}
+                {t("chatPageSummaryHelp")}<Kbd>{skillCommand("test")}</Kbd>{t("chatQuizHelp")}<Kbd>{skillCommand("test")} 10-25</Kbd>{t("chatQuizRangeHelp")}
               </p>
               <p className="mt-4">
                 {t("chatRangeHelpBefore")}{" "}
@@ -959,7 +960,7 @@ function ChatWindow({
                     }}
                     className="flex w-full gap-3 text-left hover:text-ink"
                   >
-                    <span className="w-16 font-mono text-ink">{s.usage}</span>
+                    <span className="w-20 shrink-0 font-mono text-ink">{s.usage}</span>
                     <span className="text-muted">{s.description}</span>
                   </button>
                 </li>
