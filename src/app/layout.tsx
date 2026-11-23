@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Sans, Newsreader } from "next/font/google";
 import Script from "next/script";
 import ServiceWorker from "@/components/service-worker";
+import DesktopHint from "@/components/desktop-hint";
 import { THEME_STORAGE_KEY } from "@/lib/theme";
 import "./globals.css";
 
@@ -39,12 +40,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       suppressHydrationWarning
       className={`${newsreader.variable} ${plex.variable} h-full antialiased`}
     >
-      <body className="h-full">
+      <body className="app-shell">
         {/* beforeInteractive: sunucu HTML'ine eklenir, sayfa boyanmadan çalışır */}
         <Script id="theme" strategy="beforeInteractive">
           {themeScript}
         </Script>
-        {children}
+        <DesktopHint />
+        <div className="app-content">{children}</div>
         <ServiceWorker />
         {/* Gece teması sayfa filtresi: aydınlığı ters çevirir ama renk tonunu korur, sonucu
             tam olarak sayfa zemini (#1d2129) ile yazı rengi (#d8d4cb) arasına yerleştirir */}

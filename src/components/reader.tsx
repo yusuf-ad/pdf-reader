@@ -1010,31 +1010,33 @@ export default function Reader({ pane }: { pane: PaneProps }) {
   const showPanels = !focusMode;
 
   return (
-    <div className="relative flex h-full">
+    <div className="reader relative flex h-full min-w-0">
       {file && leftOpen && showPanels && (
-        <ResizablePanel id="left" edge="right" defaultWidth={320} minWidth={240}>
-          <LeftPanel
-            tab={leftTab}
-            onTabChange={(tab) => {
-              setLeftTab(tab);
-              if (tab === "search") requestAnimationFrame(() => searchInputRef.current?.focus());
-            }}
-            pdf={pdf}
-            currentPage={currentPage}
-            onGoTo={goTo}
-            bookmarks={bookmarks}
-            onToggleBookmark={(page) => key && toggleBookmark(key, page)}
-            query={searchQuery}
-            onQueryChange={setSearchQuery}
-            search={search}
-            searchInputRef={searchInputRef}
-            book={key}
-            onAsk={askAbout}
-            onStartCrop={startCrop}
-            onOpenFile={openFile}
-            onAskImage={askImage}
-          />
-        </ResizablePanel>
+        <div className="reader-side-panel h-full shrink-0">
+          <ResizablePanel id="left" edge="right" defaultWidth={320} minWidth={240}>
+            <LeftPanel
+              tab={leftTab}
+              onTabChange={(tab) => {
+                setLeftTab(tab);
+                if (tab === "search") requestAnimationFrame(() => searchInputRef.current?.focus());
+              }}
+              pdf={pdf}
+              currentPage={currentPage}
+              onGoTo={goTo}
+              bookmarks={bookmarks}
+              onToggleBookmark={(page) => key && toggleBookmark(key, page)}
+              query={searchQuery}
+              onQueryChange={setSearchQuery}
+              search={search}
+              searchInputRef={searchInputRef}
+              book={key}
+              onAsk={askAbout}
+              onStartCrop={startCrop}
+              onOpenFile={openFile}
+              onAskImage={askImage}
+            />
+          </ResizablePanel>
+        </div>
       )}
 
       <main
@@ -1145,7 +1147,7 @@ export default function Reader({ pane }: { pane: PaneProps }) {
           data-scroll-root
           onScroll={handleScroll}
           onMouseUp={handleMouseUp}
-          className="relative flex-1 overflow-auto px-8 py-10"
+          className="reader-pages relative min-h-0 flex-1 overflow-auto px-8 py-10"
         >
           {file && (
             <PdfViewer
@@ -1196,25 +1198,27 @@ export default function Reader({ pane }: { pane: PaneProps }) {
       </main>
 
       {rightOpen && showPanels && (
-        <ResizablePanel id="words" edge="left" defaultWidth={360} minWidth={280}>
-          <WordList
-            words={words}
-            onRemove={remove}
-            onAsk={askWord}
-            onClear={clear}
-            currentFileName={file?.name ?? null}
-            onGoTo={goTo}
-            book={key}
-            currentPage={currentPage}
-            onClose={() => setRightOpen(false)}
-          />
-        </ResizablePanel>
+        <div className="reader-side-panel h-full shrink-0">
+          <ResizablePanel id="words" edge="left" defaultWidth={360} minWidth={280}>
+            <WordList
+              words={words}
+              onRemove={remove}
+              onAsk={askWord}
+              onClear={clear}
+              currentFileName={file?.name ?? null}
+              onGoTo={goTo}
+              book={key}
+              currentPage={currentPage}
+              onClose={() => setRightOpen(false)}
+            />
+          </ResizablePanel>
+        </div>
       )}
 
       {(!file || libraryOpen) && (
         <div
           // Bölmenin içinde: yandaki kitap görünür kalsın
-          className="absolute inset-0 z-30 overflow-y-auto bg-paper"
+          className="reader-library absolute inset-0 z-30 overflow-y-auto bg-paper"
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             e.preventDefault();
