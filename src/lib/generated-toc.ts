@@ -1,5 +1,7 @@
 "use client";
 
+import { translate } from "./i18n";
+
 // PDF'e gömülü içindekiler (outline) olmayan kitaplar için: kitabın basılı içindekiler
 // sayfası yapay zekayla okunur, basılı sayfa numaraları PDF sayfalarına eşlenir.
 // Yalnızca kullanıcı isteyince çalışır; sonuç kitap başına saklanır.
@@ -74,7 +76,7 @@ export async function generateToc(
     const text = (await readPage(p).catch(() => "")).trim();
     if (text) sample.push(`[s. ${p}]\n${text.slice(0, SCAN_PAGE_CHARS)}`);
   }
-  if (!sample.length) throw new Error("İlk sayfalarda okunabilir metin yok (taranmışsa önce metin tanımayı aç).");
+  if (!sample.length) throw new Error(translate("ai", "tocNoText"));
 
   if (!hasAiKey()) return null;
   const res = await fetch("/api/toc", {
@@ -84,7 +86,7 @@ export async function generateToc(
     signal,
   });
   const data = (await res.json()) as TocResponse & { error?: string };
-  if (!res.ok) throw new Error(data.error ?? "İçindekiler çıkarılamadı.");
+  if (!res.ok) throw new Error(data.error ?? translate("ai", "tocError"));
   if (!data.found || !data.entries.length) return null;
 
   // İçindekiler sayfalarında bütün başlıklar geçtiği için aramada atlanır

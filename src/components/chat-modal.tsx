@@ -1,5 +1,6 @@
 "use client";
 
+import { translate, useLang, useT } from "@/lib/i18n";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type FileUIPart } from "ai";
 import type { PDFDocumentProxy } from "pdfjs-dist";
@@ -50,6 +51,7 @@ import {
   applyChanges,
   editMemory,
   memoryBody,
+  memoryDisplayText,
   removeMemory,
   revertChanges,
   setMemoryEnabled,
@@ -78,14 +80,6 @@ import { NoteCard } from "./note-writer";
 import WordProposal from "./word-proposal";
 import { aiHeaders, hasAiKey, openAiSettings, useAiSettings } from "@/lib/ai-settings";
 
-const AI_COPY = {
-  addKey: "AI özellikleri için API key ekle",
-  settings: "API key ekle / düzenle",
-  invalidKey: "API key eksik ya da geçersiz",
-  rateLimited: "Sağlayıcı limitine takıldın, biraz sonra tekrar dene.",
-  failed: "Cevap alınamadı, tekrar dene.",
-};
-
 const MAX_IMAGES = 4;
 // Büyük ekran görüntüleri bu boyuta küçültülür (istek küçük kalsın, yazı yine okunur)
 const MAX_IMAGE_SIDE = 2000;
@@ -113,7 +107,7 @@ async function toImagePart(file: File): Promise<FileUIPart> {
   return {
     type: "file",
     mediaType: "image/jpeg",
-    filename: file.name || "ekran-goruntusu.jpg",
+    filename: file.name || translate("ai", "chatImageFilename"),
     url: canvas.toDataURL("image/jpeg", 0.9),
   };
 }
@@ -203,6 +197,7 @@ function ChatWindow({
   onGoTo,
   onMarkQuestions,
 }: Props & { sessionId: string; onOpenSession: (id: string) => void }) {
+  const t = useT("ai");
   const settings = useAiSettings();
   const [profile, setProfile] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -503,7 +498,7 @@ function ChatWindow({
         setReading({ done: p - from + 1, total });
       }
     } catch (e) {
-      setNotice(`PDF okunamadı: ${e instanceof Error ? e.message : e}`);
+      setNotice(t("chatReadError", { error: String(e instanceof Error ? e.message : e) }));
       return;
     } finally {
       setReading(null);
@@ -521,18 +516,18 @@ function ChatWindow({
               (p) => marked[p]?.length,
             );
       if (!imagePages.length)
-        return setNotice(`s. ${from}–${to} arasında işaretli cevap yok.`);
+        return setNotice(t("chatNoMarkedAnswers", { from, to }));
       if (imagePages.length > MAX_CHECK_PAGES) {
         imagePages = imagePages.slice(0, MAX_CHECK_PAGES);
         setNotice(
-          `Bir seferde en fazla ${MAX_CHECK_PAGES} sayfa kontrol edilir; s. ${imagePages[imagePages.length - 1]}'e kadarki sayfalar gönderildi.`,
+          t("chatCheckLimit", { n: MAX_CHECK_PAGES, page: imagePages[imagePages.length - 1] }),
         );
       }
       try {
         files = [];
         for (const p of imagePages) files.push(await renderMarkedPage(pdf, book, p));
       } catch {
-        return setNotice("Sayfanın görüntüsü alınamadı.");
+        return setNotice(t("chatImageFailed"));
       }
       // Gönderilmeyen sayfaların metni de gitmesin
       if (from !== to) {
@@ -580,7 +575,7 @@ function ChatWindow({
     const skill = parseSkill(text, pdf?.numPages ?? 0, currentPage);
     if (skill) {
       if ("error" in skill) return setNotice(skill.error);
-      if (!pdf) return setNotice("Önce bir PDF aç.");
+      if (!pdf) return setNotice(t("chatOpenPdf"));
       setInput("");
       runSkill(text, skill.name, skill.from, skill.to);
       return;
@@ -661,7 +656,7 @@ function ChatWindow({
   return (
     <div
       role="dialog"
-      aria-label="Sohbet"
+      aria-label={t("chatTitle")}
       // Ekran görüntüsü yapıştır (Ctrl V) veya sürükle-bırak
       onPaste={(e) => {
         const files = imagesIn(e.clipboardData.files);
@@ -688,7 +683,7 @@ function ChatWindow({
       className="relative flex h-[min(80vh,760px)] w-[min(760px,92vw)] flex-col border border-rule bg-sheet shadow-[0_12px_40px_var(--shadow)]"
     >
       <header className="flex items-baseline gap-3 border-b border-rule px-6 py-3">
-        <h2 className="font-serif text-lg">Sor</h2>
+        <h2 className="font-serif text-lg">{t("chatAsk")}</h2>
         {title && (
           <span
             className="min-w-0 flex-1 truncate text-xs text-muted"
@@ -701,9 +696,9 @@ function ChatWindow({
           <button
             onClick={() => setPanel((v) => (v === "memory" ? null : "memory"))}
             className={panel === "memory" ? "text-ink" : "hover:text-ink"}
-            title="Sana dair hatırladıkları; tüm kitaplarda geçerli"
+            title={t("chatMemoryHint")}
           >
-            Hafıza{memory.length > 0 && ` (${memory.length})`}
+            {t("chatMemory")}{memory.length > 0 && ` (${memory.length})`}
           </button>
           {sessions.length > 0 && (
             <button
@@ -713,7 +708,7 @@ function ChatWindow({
               className={showHistory ? "text-ink" : "hover:text-ink"}
               disabled={busy}
             >
-              Geçmiş ({sessions.length})
+              {t("chatHistoryCount", { n: sessions.length })}
             </button>
           )}
           {messages.length > 0 && (
@@ -722,11 +717,11 @@ function ChatWindow({
               className="hover:text-ink"
               disabled={busy}
             >
-              Yeni sohbet
+              {t("chatNew")}
             </button>
           )}
           <button onClick={onClose} className="hover:text-ink">
-            Kapat <Kbd>Esc</Kbd>
+            {t("actionClose")} <Kbd>Esc</Kbd>
           </button>
         </div>
       </header>
@@ -745,13 +740,13 @@ function ChatWindow({
           {panel && (
             <div className="mb-4 flex items-baseline gap-3 border-b border-rule pb-2">
               <h3 className="flex-1 font-serif text-base">
-                {panel === "memory" ? "Hafıza" : "Geçmiş sohbetler"}
+                {panel === "memory" ? t("chatMemory") : t("chatHistoryTitle")}
               </h3>
               <button
                 onClick={() => setPanel(null)}
                 className="text-xs text-muted hover:text-ink"
               >
-                ← Sohbete dön <Kbd>Esc</Kbd>
+                {t("chatBack")}<Kbd>Esc</Kbd>
               </button>
             </div>
           )}
@@ -775,40 +770,25 @@ function ChatWindow({
           {!panel && messages.length === 0 && (
             <div className="py-8 text-sm leading-relaxed text-muted">
               <p>
-                PDF&apos;te bir bölüm seç ve <Kbd>Ctrl K</Kbd> ile buraya ekle;
-                o bölüm hakkında istediğini sor. Seçim yapmadan da sorabilirsin;
-                açık sayfa ve bölüm otomatik eklenir.
+                {t("chatIntroBefore")}<Kbd>Ctrl K</Kbd>{t("chatIntroAfter")}
               </p>
               <ul className="mt-3 space-y-1 font-serif text-[15px] text-ink/80">
-                <li>“Bu cümleyi daha sade anlatır mısın?”</li>
-                <li>“Buradaki dilbilgisi yapısı ne?”</li>
-                <li>“Bahsedilen kişi kim, ne zaman yaşamış?”</li>
+                <li>{t("chatExampleSimple")}</li>
+                <li>{t("chatExampleGrammar")}</li>
+                <li>{t("chatExamplePerson")}</li>
               </ul>
               <p className="mt-4">
-                Hazır komutlar: <Kbd>/ozet</Kbd> tüm PDF&apos;i özetler (
-                <Kbd>/ozet 10-25</Kbd> yalnızca o sayfaları), <Kbd>/sayfa</Kbd>{" "}
-                açık sayfayı özetler, <Kbd>/test</Kbd> tüm PDF&apos;ten çoktan
-                seçmeli test hazırlar (<Kbd>/test 10-25</Kbd> yalnızca o
-                sayfalardan). “15 soruluk test hazırla”, “bu sayfadan test yap”
-                gibi yazarak da isteyebilirsin.
+                {t("chatCommandsIntro")}<Kbd>/ozet</Kbd>{t("chatSummaryHelp")}<Kbd>/ozet 10-25</Kbd>{t("chatRangeSummaryHelp")}<Kbd>/sayfa</Kbd>{" "}
+                {t("chatPageSummaryHelp")}<Kbd>/test</Kbd>{t("chatQuizHelp")}<Kbd>/test 10-25</Kbd>{t("chatQuizRangeHelp")}
               </p>
               <p className="mt-4">
-                Sorunun yalnızca açık sayfaya değil tüm PDF&apos;e ya da bir
-                sayfa aralığına göre cevaplanmasını istersen alttaki{" "}
-                <Kbd>+ Tüm sayfalar / aralık</Kbd>&apos;ı aç; sınırları
-                yazarak aralığı daraltabilirsin.
+                {t("chatRangeHelpBefore")}{" "}
+                <Kbd>{t("chatAddRange")}</Kbd>{t("chatRangeHelpAfter")}</p>
+              <p className="mt-4">
+                {t("chatMarkHelp")}
               </p>
               <p className="mt-4">
-                Test çözdüysen şıklarını kalemle işaretleyip “cevaplarımı
-                kontrol et” yaz: işaretlerini sayfadan okur, yanlışlarının
-                numarasını sarı, doğru şıkkı yeşil işaretler ve yanına kısa not
-                yazar. Yanlışlarını biliyorsan “3 ve 7&apos;yi yanlış yaptım,
-                işaretle” de diyebilirsin.
-              </p>
-              <p className="mt-4">
-                Ekran görüntüsü de ekleyebilirsin: <Kbd>Ctrl V</Kbd> ile
-                yapıştır ya da buraya sürükle. İçindeki yazıyı okur, çevirir,
-                açıklar.
+                {t("chatImageHelpBefore")}<Kbd>Ctrl V</Kbd>{t("chatImageHelpAfter")}
               </p>
             </div>
           )}
@@ -839,29 +819,29 @@ function ChatWindow({
 
             {reading && (
               <p className="font-mono text-xs text-muted">
-                PDF okunuyor… {reading.done}/{reading.total} sayfa
+                {t("chatReading", { done: reading.done, total: reading.total })}
               </p>
             )}
             {preparing && !profile && (
               <p className="animate-pulse font-mono text-xs text-muted">
-                kitap tanınıyor…
+                {t("chatRecognizing")}
               </p>
             )}
             {status === "submitted" && (
               <p className="animate-pulse font-mono text-xs text-muted">
                 {messages.at(-1)?.metadata?.skill?.name === "test"
-                  ? "test hazırlanıyor…"
+                  ? t("chatPreparingQuiz")
                   : messages.at(-1)?.metadata?.skill?.name === "kelime"
-                    ? "kelimeler aranıyor…"
+                    ? t("chatFindingWords")
                     : (messages.at(-1)?.metadata?.skill?.pages.length ?? 0) > 1
-                      ? "özetleniyor… (uzun belgelerde birkaç dakika sürebilir)"
-                      : "düşünüyor…"}
+                      ? t("chatSummarizing")
+                      : t("chatThinking")}
               </p>
             )}
             {notice && <p className="text-sm text-accent">{notice}</p>}
             {!needsKey && (error || profileError) && (
               <div className="text-sm text-accent">
-                {errorCode === "rate_limited" ? AI_COPY.rateLimited : AI_COPY.failed}{" "}
+                {errorCode === "rate_limited" ? t("chatRateLimited") : t("chatFailed")}{" "}
                 <button
                   onClick={async () => {
                     if (!hasAiKey()) return openAiSettings();
@@ -875,7 +855,7 @@ function ChatWindow({
                   }}
                   className="underline underline-offset-2"
                 >
-                  Tekrar dene
+                  {t("chatRetry")}
                 </button>
               </div>
             )}
@@ -890,9 +870,9 @@ function ChatWindow({
         <div className="mx-auto max-w-[70ch]">
           {needsKey && (
             <div className="mb-3 border border-rule bg-paper px-3 py-2 text-sm text-muted">
-              <p>{settings?.key ? AI_COPY.invalidKey : AI_COPY.addKey}</p>
+              <p>{settings?.key ? t("chatInvalidKey") : t("chatAddKey")}</p>
               <button onClick={openAiSettings} className="mt-2 border border-rule px-3 py-1 text-ink hover:border-ink">
-                {AI_COPY.settings}
+                {t("chatSettings")}
               </button>
             </div>
           )}
@@ -919,7 +899,7 @@ function ChatWindow({
               />
               {!reference && messages.length === 0 && (
                 <span className="ml-auto text-muted">
-                  Seçip <Kbd>Ctrl K</Kbd> ile metin ekleyebilirsin.
+                  {t("chatSelectBefore")}<Kbd>Ctrl K</Kbd>{t("chatSelectAfter")}
                 </span>
               )}
             </div>
@@ -932,17 +912,16 @@ function ChatWindow({
               <button
                 onClick={onClearReference}
                 className="text-xs text-muted hover:text-accent"
-                aria-label="Seçili metni kaldır"
+                aria-label={t("chatRemoveSelection")}
               >
-                Kaldır
+                {t("actionRemove")}
               </button>
             </div>
           ) : (
             !pdf &&
             messages.length === 0 && (
               <p className="mb-2 text-xs text-muted">
-                Referans yok. PDF&apos;te seçip <Kbd>Ctrl K</Kbd> ile
-                ekleyebilirsin.
+                {t("chatNoReferenceBefore")}<Kbd>Ctrl K</Kbd>{t("chatNoReferenceAfter")}
               </p>
             )
           )}
@@ -960,7 +939,7 @@ function ChatWindow({
                     onClick={() =>
                       setImages((prev) => prev.filter((_, j) => j !== i))
                     }
-                    aria-label="Görseli kaldır"
+                    aria-label={t("chatRemoveImage")}
                     className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center bg-ink text-[10px] leading-none text-sheet opacity-0 transition-opacity group-hover:opacity-100"
                   >
                     ×
@@ -1005,10 +984,10 @@ function ChatWindow({
               rows={Math.min(6, input.split("\n").length)}
               placeholder={
                 images.length
-                  ? "Görsel hakkında sor (boş bırakırsan okuyup açıklar)…"
+                  ? t("chatImagePlaceholder")
                   : reference
-                    ? "Seçili metin hakkında sor (boş bırakıp Enter: açıkla)…"
-                    : "Bir şey sor…"
+                    ? t("chatSelectionPlaceholder")
+                    : t("chatPlaceholder")
               }
               className="flex-1 resize-none bg-transparent py-1 leading-relaxed outline-none placeholder:text-muted"
             />
@@ -1026,30 +1005,30 @@ function ChatWindow({
             <button
               onClick={() => fileRef.current?.click()}
               disabled={images.length >= MAX_IMAGES}
-              title="Görsel ekle (Ctrl V ile yapıştır, sürükle-bırak)"
+              title={t("chatAddImageHint")}
               className="pb-1 text-xs text-muted hover:text-ink disabled:opacity-40"
             >
-              Görsel ekle
+              {t("chatAddImage")}
             </button>
             {busy && (
               <button
                 onClick={stopAll}
                 className="pb-1 text-xs text-muted hover:text-accent"
               >
-                Durdur
+                {t("chatStop")}
               </button>
             )}
           </div>
           <p className="mt-1.5 font-mono text-[11px] text-muted">
-            enter gönder, shift+enter yeni satır, / komutlar, esc{" "}
-            {busy ? "durdur" : "kapat"}
+            {t("chatKeyboardHelp")}{" "}
+            {busy ? t("chatStopLower") : t("chatCloseLower")}
           </p>
         </div>
       </div>
 
       {dropping && (
         <div className="pointer-events-none absolute inset-2 flex items-center justify-center border border-dashed border-ink/40 bg-sheet/90 font-serif text-lg">
-          Görseli bırak
+          {t("chatDropImage")}
         </div>
       )}
     </div>
@@ -1085,6 +1064,7 @@ const Message = memo(function Message({
   onGoTo?: (page: number) => void;
   onMark?: (id: string, input: MarkInput) => void;
 }) {
+  const t = useT("ai");
   const text = textOf(m);
   const bodyRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<string | null>(null);
@@ -1103,11 +1083,11 @@ const Message = memo(function Message({
     return (
       <div>
         <p className="mt-1.5 mb-1.5 text-[11px] tracking-[0.12em] text-accent uppercase">
-          Cevap
+          {t("chatAnswer")}
         </p>
         {searching && (
           <p className="mb-2 animate-pulse font-mono text-xs text-muted">
-            web&apos;de aranıyor…
+            {t("chatSearchingWeb")}
           </p>
         )}
         {body && (
@@ -1224,12 +1204,12 @@ const Message = memo(function Message({
                 onClick={() => onToggleNote(index)}
                 title={
                   saved
-                    ? "Notlardan çıkar"
-                    : "Bu cevabı kelime panelindeki Notlar'a ekle"
+                    ? t("chatRemoveNote")
+                    : t("chatAddNoteHint")
                 }
                 className={`transition-colors ${saved ? "text-accent hover:text-ink" : "text-muted hover:text-ink"}`}
               >
-                {saved ? "✓ Notlarda" : "+ Nota ekle"}
+                {saved ? t("chatInNotes") : t("chatAddNote")}
               </button>
             )}
           </div>
@@ -1266,21 +1246,20 @@ const Message = memo(function Message({
       <div className="border-l-[3px] border-ink bg-paper px-4 pt-2 pb-3">
         <div className="mb-1.5 flex h-5 items-baseline gap-4 text-xs">
           <span className="flex-1 text-[11px] tracking-[0.12em] text-muted uppercase">
-            Soru
-            {m.metadata?.page &&
+            {t("chatQuestion")}{m.metadata?.page &&
               !m.metadata.reference &&
               !m.metadata.skill &&
               (onGoTo ? (
                 <button
                   onClick={() => onGoTo(m.metadata!.page!)}
-                  title="Bu soru sorulurken açık olan sayfaya git"
+                  title={t("chatQuestionPageHint")}
                   className="ml-2 tracking-normal normal-case hover:text-ink"
                 >
-                  · s. {m.metadata.page}
+                  {t("pageReferenceDot", { page: m.metadata.page! })}
                 </button>
               ) : (
                 <span className="ml-2 tracking-normal normal-case">
-                  · s. {m.metadata.page}
+                  {t("pageReferenceDot", { page: m.metadata.page! })}
                 </span>
               ))}
           </span>
@@ -1290,18 +1269,18 @@ const Message = memo(function Message({
               {(!m.metadata?.skill || m.metadata.skill.name === "belge") && (
                 <button
                   onClick={() => setDraft(text)}
-                  title="Soruyu düzenleyip yeniden gönder"
+                  title={t("chatEditHint")}
                   className="text-muted hover:text-ink"
                 >
-                  Düzenle
+                  {t("chatEdit")}
                 </button>
               )}
               <button
                 onClick={() => onResend(m.id)}
-                title="Aynı soruyu yeniden sor (sonraki cevaplar silinir)"
+                title={t("chatResendHint")}
                 className="text-muted hover:text-ink"
               >
-                Yeniden sor
+                {t("chatResend")}
               </button>
             </span>
           )}
@@ -1351,14 +1330,14 @@ const Message = memo(function Message({
             onClick={() => setDraft(null)}
             className="text-muted hover:text-ink"
           >
-            Vazgeç <Kbd>Esc</Kbd>
+            {t("actionCancel")} <Kbd>Esc</Kbd>
           </button>
           <button
             onClick={saveEdit}
             disabled={!onResend}
             className="text-ink hover:text-accent disabled:opacity-40"
           >
-            Gönder <Kbd>Enter</Kbd>
+            {t("chatSend")}<Kbd>Enter</Kbd>
           </button>
         </div>
       )}
@@ -1404,6 +1383,7 @@ function CopyButton({
   markdown: string;
   htmlRef: React.RefObject<HTMLDivElement | null>;
 }) {
+  const t = useT("ai");
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
@@ -1429,10 +1409,10 @@ function CopyButton({
   return (
     <button
       onClick={copy}
-      title="Cevabı kopyala"
+      title={t("chatCopyHint")}
       className="text-muted transition-colors hover:text-ink"
     >
-      {copied ? "✓ Kopyalandı" : "Kopyala"}
+      {copied ? t("chatCopied") : t("chatCopy")}
     </button>
   );
 }
@@ -1448,9 +1428,11 @@ function History({
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
-  const date = (t: number) =>
-    t
-      ? new Date(t).toLocaleString("tr-TR", {
+  const t = useT("ai");
+  const lang = useLang();
+  const date = (timestamp: number) =>
+    timestamp
+      ? new Date(timestamp).toLocaleString(lang === "tr" ? "tr-TR" : "en-US", {
           day: "numeric",
           month: "short",
           hour: "2-digit",
@@ -1473,8 +1455,8 @@ function History({
             <span className="font-mono text-[11px] text-muted">
               {[
                 date(s.updatedAt),
-                `${s.messages.length} mesaj`,
-                s.id === current && "açık",
+                t("chatMessageCount", { n: s.messages.length }),
+                s.id === current && t("chatActive"),
               ]
                 .filter(Boolean)
                 .join(" · ")}
@@ -1484,7 +1466,7 @@ function History({
             onClick={() => onDelete(s.id)}
             className="text-xs text-muted opacity-0 transition-opacity group-hover:opacity-100 hover:text-accent focus:opacity-100"
           >
-            Sil
+            {t("actionDelete")}
           </button>
         </li>
       ))}
@@ -1503,13 +1485,14 @@ function memoryChangesOf(m: ChatMessage): MemoryChange[] {
 
 /** Cevabın altında: "Hafızaya eklendi: … · Geri al". */
 function MemoryNote({ changes }: { changes: MemoryChange[] }) {
+  const t = useT("ai");
   const items = useMemory();
   if (!changes.length) return null;
   const active = changes.some((c) => isChangeActive(items, c));
   const label = {
-    add: "Hafızaya eklendi",
-    remove: "Hafızadan silindi",
-    update: "Hafıza güncellendi",
+    add: t("chatMemoryAdded"),
+    remove: t("chatMemoryRemoved"),
+    update: t("chatMemoryUpdated"),
   };
   return (
     <div className="mt-2 flex items-baseline gap-3 text-xs text-muted">
@@ -1526,16 +1509,17 @@ function MemoryNote({ changes }: { changes: MemoryChange[] }) {
           onClick={() => revertChanges(changes)}
           className="shrink-0 underline underline-offset-2 hover:text-ink"
         >
-          Geri al
+          {t("chatUndo")}
         </button>
       ) : (
-        <span className="shrink-0">Geri alındı</span>
+        <span className="shrink-0">{t("chatUndone")}</span>
       )}
     </div>
   );
 }
 
 function MemoryPanel({ items }: { items: { id: string; text: string }[] }) {
+  const t = useT("ai");
   const enabled = useMemoryEnabled();
   const [draft, setDraft] = useState("");
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(
@@ -1547,16 +1531,17 @@ function MemoryPanel({ items }: { items: { id: string; text: string }[] }) {
     setDraft("");
   };
   const saveEdit = () => {
-    if (editing) editMemory(editing.id, editing.text);
+    if (editing) {
+      const original = items.find((item) => item.id === editing.id);
+      if (!original || editing.text !== memoryDisplayText(original)) editMemory(editing.id, editing.text);
+    }
     setEditing(null);
   };
   return (
     <div className="text-sm">
       <div className="mb-3 flex items-baseline gap-3">
         <p className="flex-1 text-xs leading-relaxed text-muted">
-          Sana dair hatırladıkları; tüm kitaplarda her soruya eklenir. Sohbette
-          öğrendiklerini kendisi ekler, “bunu hatırla” / “bunu unut” da
-          diyebilirsin.
+          {t("chatMemoryHelp")}
         </p>
         <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs text-muted">
           <input
@@ -1564,7 +1549,7 @@ function MemoryPanel({ items }: { items: { id: string; text: string }[] }) {
             checked={enabled}
             onChange={(e) => setMemoryEnabled(e.target.checked)}
           />
-          Hafızayı kullan
+          {t("chatUseMemory")}
         </label>
       </div>
       <ul className={`divide-y divide-rule ${enabled ? "" : "opacity-50"}`}>
@@ -1588,25 +1573,25 @@ function MemoryPanel({ items }: { items: { id: string; text: string }[] }) {
               />
             ) : (
               <button
-                onClick={() => setEditing(m)}
-                title="Düzenlemek için tıkla"
+                onClick={() => setEditing({ ...m, text: memoryDisplayText(m) })}
+                title={t("chatEditMemoryHint")}
                 className="min-w-0 flex-1 text-left font-serif hover:text-accent"
               >
-                {m.text}
+                {memoryDisplayText(m)}
               </button>
             )}
             <button
               onClick={() => removeMemory(m.id)}
               className="text-xs text-muted opacity-0 transition-opacity group-hover:opacity-100 hover:text-accent focus:opacity-100"
             >
-              Sil
+              {t("actionDelete")}
             </button>
           </li>
         ))}
       </ul>
       {!items.length && (
         <p className="py-2 font-serif text-muted">
-          Henüz bir şey hatırlamıyor.
+          {t("chatMemoryEmpty")}
         </p>
       )}
       <div className="mt-3 flex items-baseline gap-2">
@@ -1619,8 +1604,8 @@ function MemoryPanel({ items }: { items: { id: string; text: string }[] }) {
           onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder={
             full
-              ? `Hafıza dolu (${MEMORY_MAX_ITEMS} madde)`
-              : "Ekle: ör. “KPSS'ye hazırlanıyorum, cevaplar kısa olsun”"
+              ? t("chatMemoryFull", { n: MEMORY_MAX_ITEMS })
+              : t("chatMemoryPlaceholder")
           }
           className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted"
         />
@@ -1633,6 +1618,7 @@ function MemoryPanel({ items }: { items: { id: string; text: string }[] }) {
 }
 
 function Sources({ sources }: { sources: { url: string; title?: string }[] }) {
+  const t = useT("ai");
   const host = (url: string) => {
     try {
       return new URL(url).hostname.replace(/^www\./, "");
@@ -1642,7 +1628,7 @@ function Sources({ sources }: { sources: { url: string; title?: string }[] }) {
   };
   return (
     <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-muted">
-      <span>Kaynaklar:</span>
+      <span>{t("chatSources")}</span>
       {sources.map((s) => (
         <a
           key={s.url}
@@ -1660,6 +1646,7 @@ function Sources({ sources }: { sources: { url: string; title?: string }[] }) {
 }
 
 function MessageImages({ images }: { images: FileUIPart[] }) {
+  const t = useT("ai");
   // Tıklayınca büyür / küçülür
   const [open, setOpen] = useState<number | null>(null);
   if (!images.length) return null;
@@ -1674,7 +1661,7 @@ function MessageImages({ images }: { images: FileUIPart[] }) {
           {/* eslint-disable-next-line @next/next/no-img-element -- yerel data URL */}
           <img
             src={img.url}
-            alt={img.filename ?? "Görsel"}
+            alt={img.filename ?? t("chatImage")}
             decoding="async"
             className={`border border-rule ${open === i ? "max-h-[60vh] max-w-full" : "max-h-40 max-w-60 object-cover"}`}
           />
@@ -1685,12 +1672,13 @@ function MessageImages({ images }: { images: FileUIPart[] }) {
 }
 
 function ReferenceQuote({ reference }: { reference: Reference }) {
+  const t = useT("ai");
   const words = reference.text.split(/\s+/).length;
   return (
     <div className="border-l-2 border-accent/60 pl-3">
       <p className="text-[11px] text-muted">
-        Seçili metin{reference.page && ` · s. ${reference.page}`}
-        {words > 1 && ` · ${words} kelime`}
+        {t("chatSelection")}{reference.page && t("pageReferenceDot", { page: reference.page })}
+        {words > 1 && t("chatWordCount", { n: words })}
       </p>
       <p className="line-clamp-3 font-serif text-[15px] leading-snug text-ink/80">
         {reference.text}
@@ -1753,36 +1741,37 @@ function PageChip({
   off: boolean;
   onToggle: () => void;
 }) {
+  const t = useT("ai");
   if (off)
     return (
       <button
         onClick={onToggle}
-        title="Açık sayfayı soruya yeniden ekle"
+        title={t("chatAddPageHint")}
         className="border border-dashed border-rule px-2 py-0.5 text-muted hover:border-muted hover:text-ink"
       >
-        + Sayfa {page}
+        {t("chatAddPage", { page })}
       </button>
     );
   return (
     <span
       title={
         preview?.empty
-          ? "Bu sayfada okunabilir metin yok (taranmış, OCR yapılmamış)"
+          ? t("chatNoPageText")
           : preview?.excerpt
             ? `${preview.excerpt}…`
             : undefined
       }
       className="flex min-w-0 items-baseline gap-2 border border-rule bg-paper px-2 py-0.5"
     >
-      <span className="shrink-0 text-ink">Sayfa {page}</span>
+      <span className="shrink-0 text-ink">{t("chatPageNumber", { page })}</span>
       {preview?.chapter && (
         <span className="min-w-0 truncate text-muted">{preview.chapter}</span>
       )}
-      {preview?.empty && <span className="shrink-0 text-accent">metin yok</span>}
+      {preview?.empty && <span className="shrink-0 text-accent">{t("chatNoText")}</span>}
       <button
         onClick={onToggle}
-        aria-label="Açık sayfayı bu sorudan çıkar"
-        title="Bu soruda sayfayı gönderme"
+        aria-label={t("chatRemovePage")}
+        title={t("chatExcludePageHint")}
         className="shrink-0 text-muted hover:text-accent"
       >
         ×
@@ -1807,14 +1796,15 @@ function PageRangeChip({
   /** refocus: değişiklikten sonra soru alanına dön */
   onChange: (range: PageRange | null, refocus: boolean) => void;
 }) {
+  const t = useT("ai");
   if (!range)
     return (
       <button
         onClick={() => onChange({ from: 1, to: numPages }, true)}
-        title="Soruyu açık sayfa yerine PDF'in tamamıyla ya da bir sayfa aralığıyla gönder"
+        title={t("chatAddRangeHint")}
         className="shrink-0 border border-dashed border-rule px-2 py-0.5 text-muted hover:border-muted hover:text-ink"
       >
-        + Tüm sayfalar / aralık
+        {t("chatAddRange")}
       </button>
     );
   const to = Math.min(range.to, numPages);
@@ -1827,27 +1817,27 @@ function PageRangeChip({
   };
   return (
     <span
-      title="Sorular bu sayfalarla gider; uzun aralıkta önce soruyla ilgili yerler taranır"
+      title={t("chatRangeHint")}
       className="flex shrink-0 items-baseline gap-1.5 border border-rule bg-paper px-2 py-0.5"
     >
-      <span className="text-ink">{whole ? "Tüm PDF" : "Sayfa"}</span>
-      <PageNumberInput label="İlk sayfa" value={from} onCommit={(n, r) => set(n, to, r)} />
+      <span className="text-ink">{whole ? t("chatWholePdf") : t("wordsPage")}</span>
+      <PageNumberInput label={t("chatFirstPage")} value={from} onCommit={(n, r) => set(n, to, r)} />
       <span className="text-muted">–</span>
-      <PageNumberInput label="Son sayfa" value={to} onCommit={(n, r) => set(from, n, r)} />
+      <PageNumberInput label={t("chatLastPage")} value={to} onCommit={(n, r) => set(from, n, r)} />
       <span className="text-muted">/ {numPages}</span>
       {!whole && (
         <button
           onClick={() => onChange({ from: 1, to: numPages }, true)}
-          title="Tüm PDF'i seç"
+          title={t("chatWholePdfHint")}
           className="text-muted hover:text-ink"
         >
-          tümü
+          {t("chatAllLower")}
         </button>
       )}
       <button
         onClick={() => onChange(null, true)}
-        aria-label="Sayfa aralığını sorudan çıkar"
-        title="Yalnızca açık sayfayı gönder"
+        aria-label={t("chatRemoveRange")}
+        title={t("chatOnlyPageHint")}
         className="text-muted hover:text-accent"
       >
         ×
@@ -1907,23 +1897,25 @@ function MarkPagesSummary({
   pages: ({ checked?: number | null; questions?: unknown[] } | undefined)[] | undefined;
   ready: boolean;
 }) {
+  const t = useT("ai");
   if (!ready || !pages?.length) return null;
   const checked = pages.reduce((n, p) => n + (p?.checked ?? 0), 0);
   const wrong = pages.reduce((n, p) => n + (p?.questions?.length ?? 0), 0);
   return (
     <p className="font-serif text-[17px] leading-relaxed text-ink">
-      {pages.length} sayfada {checked} soru cevaplanmış:{" "}
-      <strong>{Math.max(0, checked - wrong)} doğru, {wrong} yanlış</strong>.
+      {t("chatCheckedPages", { pages: pages.length, n: checked })}
+      <strong>{t("chatCheckedScore", { correct: Math.max(0, checked - wrong), wrong })}</strong>.
     </p>
   );
 }
 
 function SkillNote({ skill }: { skill: SkillRequest }) {
+  const t = useT("ai");
   return (
     <p className="border-l-2 border-accent/60 pl-3 text-[11px] text-muted">
       {skillLabel(skill)}
       {skill.emptyPages.length > 0 &&
-        ` · ${skill.emptyPages.length} sayfada metin yok (taranmış, OCR yapılmamış)`}
+        t("chatEmptyPages", { n: skill.emptyPages.length })}
     </p>
   );
 }

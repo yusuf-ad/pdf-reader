@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/lib/i18n";
 import { useEffect, useRef } from "react";
 import type { Translation } from "@/lib/types";
 import { openAiSettings, useAiSettings } from "@/lib/ai-settings";
@@ -26,15 +27,9 @@ type Props = {
 };
 
 const WIDTH = 380;
-const AI_COPY = {
-  addKey: "AI özellikleri için API key ekle",
-  settings: "API key ekle / düzenle",
-  invalidKey: "API key eksik ya da geçersiz",
-  rateLimited: "Sağlayıcı limitine takıldın, biraz sonra tekrar dene.",
-  failed: "Çeviri alınamadı, tekrar dene.",
-};
 
 export default function TranslationPopover({ state, onClose, onAsk, highlightColor, onHighlight }: Props) {
+  const t = useT("ai");
   const ref = useRef<HTMLDivElement>(null);
   const settings = useAiSettings();
   const code = clientAiErrorCode(state.error);
@@ -76,18 +71,18 @@ export default function TranslationPopover({ state, onClose, onAsk, highlightCol
 
       {needsKey ? (
         <div className="mt-2 text-sm text-muted">
-          <p>{settings?.key ? AI_COPY.invalidKey : AI_COPY.addKey}</p>
+          <p>{settings?.key ? t("chatInvalidKey") : t("chatAddKey")}</p>
           <button onClick={openAiSettings} className="mt-2 border border-rule px-3 py-1.5 text-ink hover:border-ink">
-            {AI_COPY.settings}
+            {t("chatSettings")}
           </button>
         </div>
       ) : state.status === "loading" && (
-        <p className="mt-2 animate-pulse text-sm text-muted">Çevriliyor…</p>
+        <p className="mt-2 animate-pulse text-sm text-muted">{t("translationLoading")}</p>
       )}
 
       {!needsKey && state.status === "error" && (
         <p className="mt-2 text-sm text-accent">
-          {code === "rate_limited" ? AI_COPY.rateLimited : code === "ai_error" ? AI_COPY.failed : state.error}
+          {code === "rate_limited" ? t("chatRateLimited") : code === "ai_error" ? t("translationFailed") : state.error}
         </p>
       )}
 
@@ -112,8 +107,7 @@ export default function TranslationPopover({ state, onClose, onAsk, highlightCol
             onClick={onAsk}
             className="flex items-center gap-2 text-xs text-muted hover:text-ink"
           >
-            Bununla ilgili sor
-            <kbd className="border border-rule px-1 font-mono text-[11px]">Ctrl K</kbd>
+            {t("translationAsk")}<kbd className="border border-rule px-1 font-mono text-[11px]">Ctrl K</kbd>
           </button>
         ) : (
           <span />

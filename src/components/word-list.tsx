@@ -1,5 +1,6 @@
 "use client";
 
+import { useLang, useT } from "@/lib/i18n";
 import { useMemo, useState } from "react";
 import type { SavedWord } from "@/lib/types";
 import { THEMES } from "@/lib/theme";
@@ -35,6 +36,8 @@ export default function WordList({
   currentPage,
   onClose,
 }: Props) {
+  const t = useT("ai");
+  const lang = useLang();
   const [tab, setTab] = useState<Tab>("words");
   const [query, setQuery] = useState("");
   const notes = useNotes(book);
@@ -52,7 +55,7 @@ export default function WordList({
   const exportCsv = () => {
     const esc = (s: string | number | null) => `"${String(s ?? "").replace(/"/g, '""')}"`;
     const rows = [
-      ["Kelime", "Türkçe", "Tür", "Eş anlamlılar", "Cümle", "Cümle (TR)", "Sayfa", "Dosya", "Tarih"],
+      [t("wordsWord"), t("wordsTurkish"), t("wordsPartOfSpeech"), t("wordsSynonyms"), t("wordsSentence"), t("wordsSentenceTranslation"), t("wordsPage"), t("wordsFile"), t("wordsDate")],
       ...words.map((w) => [
         w.word,
         w.wordTranslation,
@@ -62,7 +65,7 @@ export default function WordList({
         w.sentenceTranslation,
         w.page,
         w.fileName,
-        new Date(w.createdAt).toLocaleString("tr-TR"),
+        new Date(w.createdAt).toLocaleString(lang === "tr" ? "tr-TR" : "en-US"),
       ]),
     ];
     // BOM: Excel'in Türkçe karakterleri doğru açması için
@@ -70,7 +73,7 @@ export default function WordList({
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = "kelimeler.csv";
+    a.download = t("wordsFilename");
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -82,8 +85,8 @@ export default function WordList({
           <div className="flex items-baseline gap-4" role="tablist">
             {(
               [
-                ["words", "Kelimeler", words.length],
-                ["notes", "Notlar", noteCount],
+                ["words", t("wordsTab"), words.length],
+                ["notes", t("wordsNotes"), noteCount],
               ] as const
             ).map(([id, label, count]) => (
               <button
@@ -102,20 +105,20 @@ export default function WordList({
             {tab === "words" && words.length > 0 && (
               <>
                 <button onClick={exportCsv} className="hover:text-ink">
-                  CSV
+                  {t("wordsCsv")}
                 </button>
                 <button
-                  onClick={() => confirm("Tüm kelimeler silinsin mi?") && onClear()}
+                  onClick={() => confirm(t("wordsClearConfirm")) && onClear()}
                   className="hover:text-accent"
                 >
-                  Temizle
+                  {t("wordsClear")}
                 </button>
               </>
             )}
             <button
               onClick={onClose}
-              aria-label="Paneli kapat"
-              title="Paneli kapat  ]"
+              aria-label={t("wordsClosePanel")}
+              title={t("wordsClosePanelHint")}
               className="-mr-2 self-center px-2 text-lg leading-none hover:text-ink"
             >
               ×
@@ -126,7 +129,7 @@ export default function WordList({
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={tab === "words" ? "Ara" : "Notlarda ara"}
+            placeholder={tab === "words" ? t("wordsSearch") : t("wordsSearchNotes")}
             className="mt-3 w-full border-b border-rule bg-transparent py-1.5 text-sm outline-none placeholder:text-muted focus:border-ink"
           />
         )}
@@ -144,11 +147,11 @@ export default function WordList({
         <ul className="flex-1 overflow-y-auto px-6">
           {words.length === 0 && (
             <li className="py-6 text-sm leading-relaxed text-muted">
-              Çevirdiğin kelimeler, geçtikleri cümleyle birlikte burada birikir.
+              {t("wordsEmpty")}
             </li>
           )}
           {words.length > 0 && filtered.length === 0 && (
-            <li className="py-6 text-sm text-muted">Eşleşen kelime yok.</li>
+            <li className="py-6 text-sm text-muted">{t("wordsNoMatches")}</li>
           )}
           {filtered.map((w) => (
             <li key={w.id} className="group border-b border-rule py-4 last:border-0">
@@ -157,22 +160,22 @@ export default function WordList({
                 <span className="text-xs text-muted">{w.partOfSpeech}</span>
                 <button
                   onClick={() => onAsk(w)}
-                  title="Bu kelimeyi geçtiği cümleyle sohbete sor"
+                  title={t("wordsAskHint")}
                   className="ml-auto text-xs text-muted hover:text-ink"
                 >
-                  AI&apos;a sor
+                  {t("wordsAsk")}
                 </button>
                 <button
                   onClick={() => onRemove(w.id)}
                   className="text-xs text-muted opacity-0 transition-opacity group-hover:opacity-100 hover:text-accent"
                 >
-                  Sil
+                  {t("actionDelete")}
                 </button>
               </div>
               <p className="font-serif text-accent">{w.wordTranslation}</p>
               {w.synonyms?.length ? (
                 <p className="mt-0.5 text-sm text-muted">
-                  <span title="Eş anlamlılar">≈</span> {w.synonyms.join(", ")}
+                  <span title={t("wordsSynonyms")}>≈</span> {w.synonyms.join(", ")}
                 </p>
               ) : null}
               {w.sentence && (
@@ -188,13 +191,13 @@ export default function WordList({
                   onClick={() => onGoTo(w.page!)}
                   className="mt-2 text-xs text-muted underline decoration-rule underline-offset-2 hover:text-ink hover:decoration-ink"
                 >
-                  Sayfaya git · s. {w.page}
+                  {t("wordsGoToPage", { page: w.page! })}
                 </button>
               ) : (
                 (w.fileName || w.page) && (
                   <p className="mt-2 truncate text-xs text-muted">
                     {w.fileName}
-                    {w.page && `, s. ${w.page}`}
+                    {w.page && t("pageReferenceComma", { page: w.page })}
                   </p>
                 )
               )}
@@ -204,17 +207,17 @@ export default function WordList({
       )}
 
       <div className="flex flex-wrap items-center gap-1 border-t border-rule px-6 py-3 text-xs">
-        <span className="mr-2 text-muted">Tema</span>
-        {THEMES.map((t) => (
+        <span className="mr-2 text-muted">{t("wordsTheme")}</span>
+        {THEMES.map((item) => (
           <button
-            key={t.id}
-            onClick={() => setTheme(t.id)}
-            aria-pressed={theme === t.id}
+            key={item.id}
+            onClick={() => setTheme(item.id)}
+            aria-pressed={theme === item.id}
             className={`px-2 py-1 transition-colors ${
-              theme === t.id ? "bg-ink/10 text-ink" : "text-muted hover:text-ink"
+              theme === item.id ? "bg-ink/10 text-ink" : "text-muted hover:text-ink"
             }`}
           >
-            {t.label}
+            {t(({ light: "wordsThemeLight", sepia: "wordsThemeSepia", baroque: "wordsThemeBaroque", night: "wordsThemeNight", dark: "wordsThemeDark", monokai: "wordsThemeMonokai", ristretto: "wordsThemeRistretto" } as const)[item.id])}
           </button>
         ))}
       </div>

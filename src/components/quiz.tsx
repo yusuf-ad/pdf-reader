@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/lib/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { shuffledOrder, type QuizInput } from "@/lib/quiz";
 
@@ -30,6 +31,7 @@ const GREEN = "var(--good)";
  * açıklama görünür, sonda skor ve yanlışları tekrar çözme. Klavye: 1-4 / A-D seç, Enter/→ ileri, ← geri.
  */
 export default function Quiz({ id, input, ready, error, onGoTo }: Props) {
+  const t = useT("ai");
   const questions = useMemo<Question[]>(
     () =>
       (input?.questions ?? []).flatMap((q) => {
@@ -41,25 +43,26 @@ export default function Quiz({ id, input, ready, error, onGoTo }: Props) {
     [input],
   );
 
-  if (error) return <p className="text-sm text-accent">Test oluşturulamadı: {error}</p>;
+  if (error) return <p className="text-sm text-accent">{t("quizErrorPrefix")}{error}</p>;
   if (!ready) return <Preparing title={input?.title} count={input?.questions?.length ?? 0} />;
   if (!questions.length) {
-    return <p className="border border-rule px-5 py-4 text-sm text-muted">Bu metinden soru çıkarılamadı.</p>;
+    return <p className="border border-rule px-5 py-4 text-sm text-muted">{t("quizEmpty")}</p>;
   }
-  return <Runner id={id} title={input?.title || "Test"} questions={questions} onGoTo={onGoTo} />;
+  return <Runner id={id} title={input?.title || t("quizTitle")} questions={questions} onGoTo={onGoTo} />;
 }
 
 function Preparing({ title, count }: { title?: string; count: number }) {
+  const t = useT("ai");
   return (
     <section className="border border-rule bg-sheet px-5 py-6 font-sans">
-      <p className="text-xs tracking-wide text-muted uppercase">Test hazırlanıyor</p>
+      <p className="text-xs tracking-wide text-muted uppercase">{t("quizPreparing")}</p>
       <p className="mt-1 font-serif text-xl leading-snug">{title || "…"}</p>
       <div className="mt-5 flex gap-1" aria-hidden>
         {Array.from({ length: Math.max(5, count) }, (_, i) => (
           <span key={i} className={`h-1 flex-1 ${i < count ? "bg-ink/40" : "animate-pulse bg-rule"}`} />
         ))}
       </div>
-      <p className="mt-2 text-xs tabular-nums text-muted">{count ? `${count} soru yazıldı…` : "Metin okunuyor…"}</p>
+      <p className="mt-2 text-xs tabular-nums text-muted">{count ? t("quizWritten", { n: count }) : t("quizReading")}</p>
     </section>
   );
 }
@@ -75,6 +78,7 @@ function Runner({
   questions: Question[];
   onGoTo?: (page: number) => void;
 }) {
+  const t = useT("ai");
   // Her soru için ekrandaki şık sırası (doğru cevap hep ilk şıklarda kalmasın)
   const orders = useMemo(
     () => questions.map((q, i) => shuffledOrder(`${id}:${i}`, q.options.length)),
@@ -154,7 +158,7 @@ function Runner({
       ref={rootRef}
       tabIndex={-1}
       onKeyDown={onKeyDown}
-      aria-label={`Test: ${title}`}
+      aria-label={t("quizAriaLabel", { title })}
       className="border border-rule bg-sheet font-sans outline-none"
     >
       <header className="px-5 pt-4">
@@ -163,7 +167,7 @@ function Runner({
             {title}
           </h3>
           <span className="shrink-0 text-xs tabular-nums text-muted">
-            {finished ? "Sonuç" : `${step + 1} / ${queue.length}`}
+            {finished ? t("quizResult") : `${step + 1} / ${queue.length}`}
           </span>
         </div>
         {/* İlerleme: her parça bir soru; tıklayınca o soruya gidilir */}
@@ -177,7 +181,7 @@ function Runner({
                   setFinished(false);
                   setStep(s);
                 }}
-                aria-label={`Soru ${s + 1}${st === "right" ? ", doğru" : st === "wrong" ? ", yanlış" : ""}`}
+                aria-label={t("quizQuestionAria", { n: s + 1, status: st === "right" ? t("quizStatusRight") : st === "wrong" ? t("quizStatusWrong") : "" })}
                 className="group flex-1 py-1.5"
               >
                 <span
@@ -259,7 +263,7 @@ function Runner({
                 style={chosen === q.answer ? { color: GREEN } : undefined}
                 className={`font-medium ${chosen === q.answer ? "" : "text-accent"}`}
               >
-                {chosen === q.answer ? "Doğru" : `Yanlış · doğrusu ${LETTERS[orders[qi].indexOf(q.answer)]}`}
+                {chosen === q.answer ? t("quizCorrect") : t("quizIncorrect", { answer: LETTERS[orders[qi].indexOf(q.answer)] })}
               </p>
               {q.explanation && <p className="mt-0.5 text-ink/80">{q.explanation}</p>}
               {q.page && onGoTo && (
@@ -267,7 +271,7 @@ function Runner({
                   onClick={() => onGoTo(q.page!)}
                   className="mt-1 text-xs text-muted underline underline-offset-2 hover:text-ink"
                 >
-                  Kitapta s. {q.page}&apos;e git
+                  {t("quizGoToPage", { page: q.page! })}
                 </button>
               )}
             </div>
@@ -279,10 +283,10 @@ function Runner({
               disabled={step === 0}
               className="px-1 text-sm text-muted hover:text-ink disabled:invisible"
             >
-              ← Önceki
+              {t("quizPrevious")}
             </button>
             <span className="mx-auto hidden text-[11px] text-muted sm:inline">
-              {isAnswered ? "Enter: devam" : `1–${q.options.length} ya da A–${LETTERS[q.options.length - 1]}: seç`}
+              {isAnswered ? t("quizContinue") : t("quizChooseShortcut", { n: q.options.length, letter: LETTERS[q.options.length - 1] })}
             </span>
             <button
               ref={nextRef}
@@ -293,7 +297,7 @@ function Runner({
                   : "border-rule text-muted hover:border-ink hover:text-ink"
               }`}
             >
-              {last ? (isAnswered ? "Sonucu gör" : "Bitir") : isAnswered ? "Sonraki →" : "Atla"}
+              {last ? (isAnswered ? t("quizSeeResult") : t("quizFinish")) : isAnswered ? t("quizNext") : t("quizSkip")}
             </button>
           </div>
         </div>
@@ -319,11 +323,12 @@ function Result({
   onRetryWrong: () => void;
   onRestart: () => void;
 }) {
+  const t = useT("ai");
   const total = questions.length;
   const empty = total - Object.keys(answers).length;
   const ratio = correct / total;
   const verdict =
-    ratio === 1 ? "Hepsi doğru." : ratio >= 0.7 ? "İyi gidiyor." : ratio >= 0.4 ? "Biraz daha tekrar." : "Bu bölümü yeniden okumakta fayda var.";
+    ratio === 1 ? t("quizPerfect") : ratio >= 0.7 ? t("quizGood") : ratio >= 0.4 ? t("quizPractice") : t("quizReread");
 
   return (
     <div className="px-5 pt-4 pb-5">
@@ -335,7 +340,7 @@ function Result({
         <div className="pb-1 text-sm">
           <p>{verdict}</p>
           <p className="text-xs text-muted tabular-nums">
-            %{Math.round(ratio * 100)} · {wrong.length} yanlış{empty ? ` · ${empty} boş` : ""}
+            {t("quizScore", { percent: Math.round(ratio * 100), n: wrong.length })}{empty ? t("quizUnanswered", { n: empty }) : ""}
           </p>
         </div>
       </div>
@@ -370,14 +375,14 @@ function Result({
             onClick={onRetryWrong}
             className="border border-ink bg-ink px-4 py-1.5 text-sheet transition-colors hover:bg-ink/85"
           >
-            Yanlışları tekrar çöz ({wrong.length})
+            {t("quizRetryWrong", { n: wrong.length })}
           </button>
         )}
         <button
           onClick={onRestart}
           className="border border-rule px-4 py-1.5 transition-colors hover:border-ink"
         >
-          Baştan çöz
+          {t("quizRestart")}
         </button>
       </div>
     </div>

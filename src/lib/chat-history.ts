@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
+import { translate, useLang } from "./i18n";
+
 import type { ChatMessage } from "./chat";
 import { skillLabel } from "./skills";
 import { bookKey, get, set, useStored } from "./storage";
@@ -37,7 +38,10 @@ const load = (chatId: string) => normalize(get(key(chatId)));
 /** En yeni üstte. */
 export function useChatSessions(chatId: string) {
   const raw = useStored<unknown>(key(chatId), EMPTY);
-  return useMemo(() => [...normalize(raw)].sort((a, b) => b.updatedAt - a.updatedAt), [raw]);
+  useLang();
+  return normalize(raw)
+    .map((session) => ({ ...session, title: titleOf(session.messages) }))
+    .sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export function latestSession(chatId: string): ChatSession | undefined {
@@ -77,11 +81,11 @@ export function deleteSession(chatId: string, sessionId: string) {
 
 function titleOf(messages: ChatMessage[]) {
   const first = messages.find((m) => m.role === "user");
-  if (!first) return "Sohbet";
+  if (!first) return translate("ai", "historyChat");
   const meta = first.metadata;
   const text = first.parts.map((p) => (p.type === "text" ? p.text : "")).join(" ").trim();
   const title = meta?.skill
     ? skillLabel(meta.skill)
-    : text || meta?.reference?.text || (first.parts.some((p) => p.type === "file") ? "Görsel" : "Sohbet");
+    : text || meta?.reference?.text || (first.parts.some((p) => p.type === "file") ? translate("ai", "historyImage") : translate("ai", "historyChat"));
   return title.replace(/\s+/g, " ").slice(0, 120);
 }
