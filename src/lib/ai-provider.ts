@@ -81,8 +81,12 @@ export function missingKeyResponse() {
 
 /** Sağlayıcı hatasını istemcinin anlayacağı koda çevirir; key'i ya da ham hatayı dışarı vermez. */
 export function aiErrorCode(err: unknown): "invalid_api_key" | "rate_limited" | "ai_error" {
-  const status = (err as { statusCode?: number })?.statusCode;
+  const e = err as { statusCode?: number; responseBody?: string; message?: string };
+  const status = e?.statusCode;
   if (status === 401 || status === 403) return "invalid_api_key";
+  // Gemini geçersiz key'de 400 + API_KEY_INVALID döner
+  if (status === 400 && /API_KEY_INVALID|API key not valid/i.test(`${e.responseBody ?? ""} ${e.message ?? ""}`))
+    return "invalid_api_key";
   if (status === 429) return "rate_limited";
   return "ai_error";
 }

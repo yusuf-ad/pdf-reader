@@ -46,7 +46,6 @@ export async function POST(req: Request) {
     const code = aiErrorCode(err);
     if (code === "invalid_api_key") return Response.json({ error: code }, { status: 401 });
     console.error(code, (err as { statusCode?: number })?.statusCode);
-    const message = err instanceof Error ? err.message : "Bilinmeyen hata";
-    return Response.json({ error: `Çeviri başarısız: ${message}` }, { status: 502 });
+    return Response.json({ error: code }, { status: code === "rate_limited" ? 429 : 502 });
   }
 }
