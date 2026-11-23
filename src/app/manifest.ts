@@ -5,8 +5,8 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Okuma",
     short_name: "Okuma",
-    description: "Seçtiğin kelimeleri Türkçeye çeviren PDF okuyucu",
-    lang: "tr",
+    description: "A PDF reader for highlighting, taking notes, and translating words in context",
+    lang: "en",
     start_url: "/",
     scope: "/",
     display: "standalone",

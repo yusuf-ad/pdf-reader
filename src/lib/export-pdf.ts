@@ -1,3 +1,4 @@
+import { translate } from "./i18n";
 // Notları (kalem, yazı, vurgu, görsel) PDF'in içine yazar ve kaydeder. Kitaplıktaki kopya ve
 // uygulamadaki notlar olduğu gibi kalır; çıktı ayrı bir dosyadır.
 import fontkit from "@cantoo/fontkit";
@@ -155,7 +156,7 @@ export async function loadPdf(bytes: ArrayBuffer) {
     return doc;
   } catch (err) {
     if (/password/i.test((err as Error).message)) {
-      throw new Error("Bu PDF açılış parolasıyla korunuyor; üzerinde değişiklik yapılamıyor.");
+      throw new Error(translate("library", "exportPasswordProtected"));
     }
     throw err;
   }

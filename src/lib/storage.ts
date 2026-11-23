@@ -1,5 +1,6 @@
 "use client";
 
+import { translate } from "./i18n";
 import { useSyncExternalStore } from "react";
 
 // Kullanıcının ürettiği her şey (kelimeler, notlar, vurgular, okuma durumu…) burada durur:
@@ -254,7 +255,7 @@ export function exportData(): Backup {
 
 /** Yedeği mevcut verilerle birleştirir (hiçbir şey silinmez). */
 export function importData(backup: Backup) {
-  if (backup?.app !== "pdf-reader" || !isRecord(backup.data)) throw new Error("Bu dosya bir yedek değil.");
+  if (backup?.app !== "pdf-reader" || !isRecord(backup.data)) throw new Error(translate("library", "storageInvalidBackup"));
   for (const [k, v] of Object.entries(backup.data)) {
     if (!k.startsWith("meta:")) set(k, merge(get(k), v));
   }

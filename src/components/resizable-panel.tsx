@@ -1,5 +1,7 @@
 "use client";
 
+import { useT } from "@/lib/i18n";
+
 import { useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
 // Panel genişlikleri localStorage'da tutulur (pdf-reader:panel-width:<id>)
@@ -41,6 +43,7 @@ export default function ResizablePanel({
   minRemaining = 360,
   children,
 }: Props) {
+  const t = useT("library");
   const panelRef = useRef<HTMLDivElement>(null);
   const saved = useSyncExternalStore(subscribe, () => readWidth(id), () => null);
   // Sürüklerken her harekette localStorage'a yazmamak için geçici genişlik
@@ -61,11 +64,11 @@ export default function ResizablePanel({
       <div
         role="separator"
         aria-orientation="vertical"
-        aria-label="Panel genişliği"
+        aria-label={t("panelWidth")}
         aria-valuenow={width}
         aria-valuemin={minWidth}
         tabIndex={0}
-        title="Sürükleyerek genişliği ayarla · çift tıkla: varsayılan"
+        title={t("panelResize")}
         onPointerDown={(e) => {
           e.preventDefault();
           e.currentTarget.setPointerCapture(e.pointerId);
