@@ -179,7 +179,7 @@ function parseRange(text: string, numPages: number, currentPage: number) {
     const to = clamp(+range[2]);
     if (from <= to) return { from, to };
   }
-  const single = text.match(/(?:s\.|sayfa)\s*(\d+)|(\d+)\.?\s*sayfa/u);
+  const single = text.match(/(?:s\.|sayfa|p\.|page)\s*(\d+)|(\d+)\.?\s*sayfa/u);
   if (single) {
     const page = clamp(+(single[1] ?? single[2]));
     return { from: page, to: page };
