@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/lib/i18n";
 import { Fragment, useMemo } from "react";
 import type { OcrPage } from "@/lib/ocr";
 
@@ -18,6 +19,7 @@ function measure(text: string, size: number) {
  * böylece seçim/çeviri kodu (selection.ts) iki katmanda da aynı çalışır.
  */
 export default function OcrTextLayer({ data, width, height }: { data: OcrPage; width: number; height: number }) {
+  const t = useT("reader");
   // Ölçüm sayfa genişliğinden bağımsız: 100px'lik yazıya göre oranlanır
   const lines = useMemo(
     () =>
@@ -37,7 +39,7 @@ export default function OcrTextLayer({ data, width, height }: { data: OcrPage; w
   );
 
   return (
-    <div className="ocr-layer absolute inset-0 z-[5]" aria-label="Tanınan metin">
+    <div className="ocr-layer absolute inset-0 z-[5]" aria-label={t("ocrRecognizedText")}>
       {lines.map((line, li) => {
         const fontSize = line.size * height;
         return (

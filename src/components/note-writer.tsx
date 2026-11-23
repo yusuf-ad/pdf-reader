@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/lib/i18n";
 import { useEffect, useRef, useState } from "react";
 import {
   addAnnotation,
@@ -109,6 +110,7 @@ export function NoteCard({
   error?: string;
   onGoTo?: (page: number) => void;
 }) {
+  const t = useT("reader");
   const records = useStored(book && recordsKey(book), EMPTY);
   const rec = records[id] as NoteRecord | undefined;
   const [live] = useState(streaming);
@@ -121,17 +123,17 @@ export function NoteCard({
     writeNote(book, id, complete);
   }, [live, complete, book, rec, id]);
 
-  if (error) return <p className="text-sm text-accent">Nota eklenemedi: {error}</p>;
+  if (error) return <p className="text-sm text-accent">{t("noteWriterFailed", { error })}</p>;
   const page = rec?.page ?? input?.page;
   const title = !ready
-    ? "Not yazılıyor…"
+    ? t("noteWriterWriting")
     : rec?.undone
-      ? "Not geri alındı"
+      ? t("noteWriterUndone")
       : rec
         ? rec.before === null
-          ? "Sayfaya yeni not yazıldı"
-          : "Sayfadaki nota eklendi"
-        : "Sayfaya not";
+          ? t("noteWriterCreated")
+          : t("noteWriterAppended")
+        : t("noteWriterTitle");
   return (
     <section className="border border-rule bg-sheet px-5 py-4 font-sans">
       <div className="flex items-baseline gap-3">
@@ -142,10 +144,10 @@ export function NoteCard({
               {" · "}
               {onGoTo ? (
                 <button onClick={() => onGoTo(page)} className="tracking-normal normal-case hover:text-ink">
-                  s. {page}
+                  {t("noteWriterPage", { page })}
                 </button>
               ) : (
-                <span className="tracking-normal normal-case">s. {page}</span>
+                <span className="tracking-normal normal-case">{t("noteWriterPage", { page })}</span>
               )}
             </>
           )}
@@ -154,11 +156,11 @@ export function NoteCard({
           <span className="flex gap-4 text-xs">
             {rec && !rec.undone ? (
               <button onClick={() => undoNote(book, id)} className="text-muted hover:text-accent">
-                Geri al
+                {t("noteWriterUndo")}
               </button>
             ) : (
               <button onClick={() => writeNote(book, id, complete)} className="text-muted hover:text-ink">
-                {rec ? "Tekrar ekle" : "Nota ekle"}
+                {rec ? t("noteWriterAddAgain") : t("noteWriterAdd")}
               </button>
             )}
           </span>

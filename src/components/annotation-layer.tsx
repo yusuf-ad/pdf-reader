@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/lib/i18n";
 import { useEffect, useRef, useState } from "react";
 import {
   addAnnotation,
@@ -49,6 +50,7 @@ type Props = {
 
 /** Sayfanın üstünde kalem çizgileri ve yazılar. Araç seçili değilken tıklamaları geçirir. */
 export default function AnnotationLayer({ book, page, width: w, height: h, tool, color }: Props) {
+  const t = useT("reader");
   const items = usePageAnnotations(book, page);
   const ref = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<number[] | null>(null);
@@ -320,7 +322,7 @@ export default function AnnotationLayer({ book, page, width: w, height: h, tool,
               }}
               className="px-1 text-muted hover:text-ink"
             >
-              Düzenle
+              {t("annotationEdit")}
             </button>
           )}
           <button
@@ -330,7 +332,7 @@ export default function AnnotationLayer({ book, page, width: w, height: h, tool,
             }}
             className="px-1 text-muted hover:text-accent"
           >
-            Sil
+            {t("annotationDelete")}
           </button>
         </div>
       )}
@@ -357,6 +359,7 @@ function PictureView({
   onClick: () => void;
   onChange: (patch: Partial<Picture>) => void;
 }) {
+  const t = useT("reader");
   // Sürüklenirken geçici kayma ya da genişlik farkı (px)
   const [offset, setOffset] = useState<{ dx: number; dy: number; dw: number } | null>(null);
   const dragRef = useRef<{ x: number; y: number; resize: boolean; moved: boolean } | null>(null);
@@ -413,7 +416,7 @@ function PictureView({
       onPointerMove={move}
       onPointerUp={end}
       onPointerCancel={end}
-      title={!tool ? "Taşımak için sürükle; boyutlandırmak ya da silmek için tıkla" : undefined}
+      title={!tool ? t("annotationPictureHint") : undefined}
       style={{
         left,
         top,
@@ -432,7 +435,7 @@ function PictureView({
           onPointerMove={move}
           onPointerUp={end}
           onPointerCancel={end}
-          title="Boyutlandır"
+          title={t("annotationResize")}
           className="absolute -right-1.5 -bottom-1.5 h-3 w-3 cursor-nwse-resize border border-accent bg-sheet"
         />
       )}
@@ -460,6 +463,7 @@ function NoteView({
   onMove?: (x: number, y: number) => void;
   onCommit: (text: string) => void;
 }) {
+  const t = useT("reader");
   const ref = useRef<HTMLDivElement>(null);
   // Sürüklenirken notun geçici konumu (px kayması)
   const [offset, setOffset] = useState<{ dx: number; dy: number } | null>(null);
@@ -530,8 +534,8 @@ function NoteView({
         !draggable
           ? undefined
           : !tool || tool === "text"
-            ? "Düzenlemek ya da silmek için tıkla, taşımak için sürükle"
-            : "Taşımak için sürükle"
+            ? t("annotationNoteHint")
+            : t("annotationDragToMove")
       }
       style={{
         left: note.x * w + (offset?.dx ?? 0),

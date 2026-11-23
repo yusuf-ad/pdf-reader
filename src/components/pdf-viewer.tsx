@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/lib/i18n";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import { useEffect, useRef, useState } from "react";
 import { Document, Page, type PageProps } from "react-pdf";
@@ -37,6 +38,7 @@ type Props = {
 type PageExtras = Pick<Props, "bookKey" | "tool" | "color" | "ocr" | "onAskHighlight" | "onCrop">;
 
 export default function PdfViewer({ file, pageWidth, pageHeight, textRenderer, onLoad, onGoTo, ...annotation }: Props) {
+  const t = useT("reader");
   const [numPages, setNumPages] = useState(0);
 
   return (
@@ -52,8 +54,8 @@ export default function PdfViewer({ file, pageWidth, pageHeight, textRenderer, o
       }}
       // Sayfalar ekrana yaklaşınca çizildiği için react-pdf hedef sayfayı kendi bulamıyor
       onItemClick={({ pageNumber }) => onGoTo(pageNumber)}
-      loading={<p className="py-16 text-center text-sm text-muted">Açılıyor…</p>}
-      error={<p className="py-16 text-center text-sm text-accent">Bu PDF açılamadı.</p>}
+      loading={<p className="py-16 text-center text-sm text-muted">{t("viewerOpening")}</p>}
+      error={<p className="py-16 text-center text-sm text-accent">{t("viewerOpenFailed")}</p>}
       // w-fit + mx-auto: yakınlaştırınca sayfa taşarsa sol kenar kesilmesin, yatay kaydırılabilsin
       className="flex w-fit min-w-full flex-col gap-10"
     >
@@ -131,6 +133,7 @@ function LazyPage({
   annotation: PageExtras;
 }) {
   const ref = useRef<HTMLElement>(null);
+  const t = useT("reader");
   const [visible, setVisible] = useState(false);
   // Sayfanın kendi en/boy oranı (sayfalar arasında küçük farklar olabiliyor)
   const [aspect, setAspect] = useState<number | null>(null);
@@ -230,12 +233,12 @@ function LazyPage({
         )}
         {ocr.status === "loading" && (
           <span className="pointer-events-none absolute top-2 right-2 z-20 bg-sheet/90 px-2 py-0.5 text-[11px] text-muted">
-            Metin tanınıyor…
+            {t("viewerRecognizing")}
           </span>
         )}
         {ocr.status === "error" && (
           <span className="pointer-events-none absolute top-2 right-2 z-20 bg-sheet/90 px-2 py-0.5 text-[11px] text-accent">
-            Metin tanınamadı
+            {t("viewerRecognitionFailed")}
           </span>
         )}
         {visible && (
