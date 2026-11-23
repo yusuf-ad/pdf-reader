@@ -1,6 +1,14 @@
 "use client";
 
 import { useEffect } from "react";
+import { openOnboarding } from "./onboarding";
+
+const TEXT = {
+  title: "Kısayollar",
+  gettingStarted: "Başlarken",
+  description: "Vurgula, not al ve yapay zekâya sor: dört kısa ipucuyla başla.",
+  restart: "Tanıtım turunu yeniden aç",
+} as const;
 
 const SHORTCUTS: [string, string][] = [
   ["Ctrl + K", "Seçili metin hakkında sor (sohbet)"],
@@ -44,8 +52,13 @@ export default function ShortcutsDialog({ onClose }: { onClose: () => void }) {
       className="fixed inset-0 z-50 flex items-center justify-center bg-scrim"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div role="dialog" aria-label="Kısayollar" className="w-[440px] border border-rule bg-sheet p-6 shadow-[0_8px_30px_var(--shadow)]">
-        <h2 className="font-serif text-xl">Kısayollar</h2>
+      <div role="dialog" aria-label={TEXT.title} className="max-h-[calc(100dvh-2rem)] w-[440px] max-w-[calc(100vw-2rem)] overflow-y-auto border border-rule bg-sheet p-6 shadow-[0_8px_30px_var(--shadow)]">
+        <h2 className="font-serif text-xl">{TEXT.title}</h2>
+        <section className="mt-4 border-y border-rule py-4">
+          <h3 className="font-serif text-lg">{TEXT.gettingStarted}</h3>
+          <p className="mt-1 text-sm text-muted">{TEXT.description}</p>
+          <button onClick={() => { onClose(); openOnboarding(); }} className="mt-2 text-sm underline underline-offset-4 hover:text-accent">{TEXT.restart}</button>
+        </section>
         <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
           {SHORTCUTS.map(([keys, label]) => (
             <div key={keys} className="contents">

@@ -1,11 +1,18 @@
 "use client";
 
-import { useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { downloadBackup, restoreBackup } from "@/lib/backup";
 import type { PaperStyle } from "@/lib/blank-book";
 import { PAPER_STYLES } from "@/lib/paper-styles";
-import type { Book } from "@/lib/file-store";
+import { addWelcomeBook, type Book } from "@/lib/file-store";
 import { loadProgress } from "@/lib/reading-state";
+import { openOnboarding } from "./onboarding";
+
+const ONBOARDING_TEXT = {
+  sample: "Örnek PDF'i aç",
+  loading: "Örnek PDF hazırlanıyor…",
+  error: "Örnek PDF açılamadı. Yeniden deneyebilir veya kendi PDF’ini açabilirsin.",
+} as const;
 
 const DATA_NOTICE_TEXT = {
   title: "Verilerin bu tarayıcıda",
@@ -85,6 +92,34 @@ export default function Library({
   const [sort, setSort] = useState<Sort>("recent");
   const [blankOpen, setBlankOpen] = useState(false);
   const [revealing, setRevealing] = useState<{ key: string; text: string } | null>(null);
+  const [sampleBusy, setSampleBusy] = useState(false);
+  const [sampleError, setSampleError] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    addWelcomeBook(true).then((key) => {
+      if (!active || !key) return;
+      onOpen(key);
+      openOnboarding(true);
+    }).catch(() => { if (active) setSampleError(true); });
+    return () => { active = false; };
+  }, [onOpen]);
+
+  const openSample = async () => {
+    setSampleBusy(true);
+    setSampleError(false);
+    try {
+      const key = await addWelcomeBook();
+      if (key) {
+        onOpen(key);
+        openOnboarding(true);
+      }
+    } catch {
+      setSampleError(true);
+    } finally {
+      setSampleBusy(false);
+    }
+  };
 
   /** PDF'in diskteki klasörünü açar; sunucu dosyayı ad ve boyutundan bulur. */
   const revealBook = async (book: Book) => {
@@ -130,6 +165,14 @@ export default function Library({
           PDF aç
         </button>
         <p className="mt-3 text-xs text-muted">ya da dosyaları buraya sürükle</p>
+        <button
+          onClick={openSample}
+          disabled={sampleBusy}
+          className="mt-4 self-start text-sm underline underline-offset-4 hover:text-accent disabled:text-muted"
+        >
+          {sampleBusy ? ONBOARDING_TEXT.loading : ONBOARDING_TEXT.sample}
+        </button>
+        {sampleError && <p role="status" className="mt-2 text-xs text-muted">{ONBOARDING_TEXT.error}</p>}
         <div className="mt-6 text-sm">
           {blankOpen ? (
             <BlankBookForm onCreate={onCreateBlank} onCancel={() => setBlankOpen(false)} />
