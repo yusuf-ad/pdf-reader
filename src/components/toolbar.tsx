@@ -4,6 +4,8 @@ import { useEffect, useRef, useState, type PointerEvent, type ReactNode, type Re
 import { HIGHLIGHT_COLORS, INK_COLORS, type Tool } from "@/lib/annotations";
 import type { PaperStyle } from "@/lib/blank-book";
 import { PAPER_STYLES } from "@/lib/paper-styles";
+import { openAiSettings, useAiSettings } from "@/lib/ai-settings";
+import AiSettingsDialog from "./ai-settings-dialog";
 import {
   BookmarkIcon,
   ClosePaneIcon,
@@ -14,6 +16,7 @@ import {
   FitWidthIcon,
   ImageIcon,
   KeyboardIcon,
+  KeyIcon,
   MarkerIcon,
   NoteIcon,
   OcrIcon,
@@ -98,6 +101,7 @@ const TOOLS: [Tool, string, () => ReactNode][] = [
 ];
 
 export default function Toolbar(p: Props) {
+  const aiSettings = useAiSettings();
   const progress = p.numPages ? (p.currentPage / p.numPages) * 100 : 0;
 
   return (
@@ -241,6 +245,14 @@ Değişiklik varsa 10 dakikada bir otomatik kaydedilir`
 
       <Divider className={NARROWEST} />
 
+      <IconButton
+        label={aiSettings?.key ? "Yapay zekâ ayarları" : "Yapay zekâ için API anahtarı ekle"}
+        onClick={openAiSettings}
+        className="relative"
+      >
+        <KeyIcon />
+        {!aiSettings?.key && <span aria-hidden className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-accent" />}
+      </IconButton>
       <button
         onClick={p.onChat}
         title="Seçili metin hakkında sor  Ctrl K"
@@ -281,6 +293,7 @@ Değişiklik varsa 10 dakikada bir otomatik kaydedilir`
         className="absolute bottom-[-1px] left-0 h-0.5 bg-accent/70 transition-[width] duration-200"
         style={{ width: `${progress}%` }}
       />
+      <AiSettingsDialog />
     </header>
   );
 }
