@@ -1,4 +1,4 @@
-import { aiErrorCode, type Ai, getAi, missingKeyResponse } from "@/lib/ai-provider";
+import { aiErrorCode, type Ai, getAi, languageInstruction, missingKeyResponse } from "@/lib/ai-provider";
 import { convertToModelMessages, generateText, hasToolCall, isStepCount, streamText } from "ai";
 import {
   formatBookContext,
@@ -108,7 +108,7 @@ export async function POST(req: Request) {
         // Belge metni yalnızca son istekte gönderilir; önceki özetler sohbette zaten varl
         const prompt =
           i === last
-            ? await buildSkillPrompt(skill, model, req.signal)
+            ? await buildSkillPrompt(skill, model, req.signal, languageInstruction(req))
             : skill.name === "belge"
               ? `${skill.request ?? ""}
 (${skillLabel(skill)}: bu sayfalara soruldu; cevabı aşağıda.)`
@@ -142,7 +142,7 @@ ${prompt}` : prompt;
   // Test isteğinde model mutlaka test aracını, kelime isteğinde öneri aracını çağırır
   const lastSkill = messages[last]?.metadata?.skill;
   const skillName = lastSkill?.name;
-  const system = [SYSTEM, memory && formatMemory(memory), book && bookBlock(book, messages[last])]
+  const system = [SYSTEM, memory && formatMemory(memory), book && bookBlock(book, messages[last]), languageInstruction(req)]
     .filter(Boolean)
     .join("\n\n");
   const result = streamText({
@@ -224,6 +224,7 @@ async function buildSkillPrompt(
   skill: SkillRequest,
   model: Ai["model"],
   signal: AbortSignal,
+  language: string,
 ) {
   if (!skill.pages.length)
     return skillPrompt(skill, "(Bu sayfalarda okunabilir metin yok.)", false);
@@ -242,11 +243,11 @@ async function buildSkillPrompt(
         model,
         abortSignal: signal,
         system:
-          skill.name === "kelime"
+          (skill.name === "kelime"
             ? wordsChunkSystem(skill.request)
             : skill.name === "belge"
               ? questionChunkSystem(skill.request)
-              : CHUNK_SYSTEM,
+              : CHUNK_SYSTEM) + (language ? `\n\n${language}` : ""),
         prompt: formatPages(pages),
       });
       summaries[i] = `## ${range}\n${text}`;

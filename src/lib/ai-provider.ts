@@ -90,3 +90,17 @@ export function aiErrorCode(err: unknown): "invalid_api_key" | "rate_limited" | 
   if (status === 429) return "rate_limited";
   return "ai_error";
 }
+
+/** İstemcinin arayüz dili (`x-ui-lang`); AI cevapları bu dilde verilir. */
+export function uiLang(req: Request): "en" | "tr" {
+  return req.headers.get("x-ui-lang") === "tr" ? "tr" : "en";
+}
+
+/**
+ * Prompt'lar Türkçe yazıldı ve birçok yerde "Türkçe yaz" diyor. Arayüz İngilizceyken
+ * bunların hepsini tek bir talimatla çeviririz; sistem mesajının sonuna eklenir.
+ */
+export function languageInstruction(req: Request): string {
+  if (uiLang(req) === "tr") return "";
+  return "LANGUAGE: The user's interface is in English. Wherever these instructions or the user's message say to write in Turkish (Türkçe), write in English instead — answers, notes, translations, summaries, quiz explanations and suggestions alike. If the user explicitly asks for another language, follow the user. Translations of foreign words go into English.";
+}

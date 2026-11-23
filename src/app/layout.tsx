@@ -4,6 +4,7 @@ import Script from "next/script";
 import ServiceWorker from "@/components/service-worker";
 import DesktopHint from "@/components/desktop-hint";
 import { THEME_STORAGE_KEY } from "@/lib/theme";
+import { langScript } from "@/lib/i18n/lang-script";
 import "./globals.css";
 
 const newsreader = Newsreader({
@@ -36,7 +37,7 @@ const themeScript = `try{var t=localStorage.getItem(${JSON.stringify(THEME_STORA
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
-      lang="tr"
+      lang="en"
       suppressHydrationWarning
       className={`${newsreader.variable} ${plex.variable} h-full antialiased`}
     >
@@ -44,6 +45,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         {/* beforeInteractive: sunucu HTML'ine eklenir, sayfa boyanmadan çalışır */}
         <Script id="theme" strategy="beforeInteractive">
           {themeScript}
+        </Script>
+        <Script id="lang" strategy="beforeInteractive">
+          {langScript}
         </Script>
         <DesktopHint />
         <div className="app-content">{children}</div>

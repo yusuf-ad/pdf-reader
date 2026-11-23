@@ -1,6 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { getLang, LANG_HEADER } from "./i18n";
 
 export type AiProvider = "openai" | "google";
 export type AiSettings = { provider: AiProvider; key: string; model?: string };
@@ -97,6 +98,7 @@ export function aiHeaders(): Record<string, string> {
   const settings = getAiSettings();
   if (!settings?.key) return {};
   return {
+    [LANG_HEADER]: getLang(),
     "x-ai-provider": settings.provider,
     "x-ai-key": settings.key,
     ...(settings.model ? { "x-ai-model": settings.model } : {}),

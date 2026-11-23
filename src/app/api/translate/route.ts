@@ -1,4 +1,4 @@
-import { aiErrorCode, getAi, missingKeyResponse } from "@/lib/ai-provider";
+import { aiErrorCode, getAi, languageInstruction, missingKeyResponse } from "@/lib/ai-provider";
 import { generateText, Output } from "ai";
 import { z } from "zod";
 
@@ -36,7 +36,8 @@ export async function POST(req: Request) {
       system:
         "Sen deneyimli bir çevirmen ve sözlüksün. Kullanıcı bir PDF okurken bir kelime ya da ifade seçiyor. " +
         "Kelimeyi, geçtiği cümledeki anlamına göre Türkçeye çevir (birden fazla yaygın anlam varsa en uygun 1-3 tanesini virgülle ver). " +
-        "Cümleyi de akıcı ve doğal bir Türkçeyle çevir. Cümle verilmemişse sentenceTranslation boş string olsun.",
+        "Cümleyi de akıcı ve doğal bir Türkçeyle çevir. Cümle verilmemişse sentenceTranslation boş string olsun." +
+        (languageInstruction(req) ? ` ${languageInstruction(req)}` : ""),
       prompt: `Kelime/ifade: "${word}"\nCümle: "${sentence}"`,
     });
 
