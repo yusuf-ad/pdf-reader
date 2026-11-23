@@ -91,8 +91,8 @@ type Props = {
 };
 
 // Dar bölmede (iki kitap yan yana) az kullanılan düğmeler gizlenir; kısayolları çalışır
-const NARROW = "@max-5xl:hidden";
-const NARROWER = "@max-3xl:hidden";
+const NARROW = "@max-6xl:hidden";
+const NARROWER = "@max-5xl:hidden";
 const NARROWEST = "@max-2xl:hidden";
 
 const TOOLS = [
@@ -246,14 +246,21 @@ export default function Toolbar(p: Props) {
 
       <Divider className={NARROWEST} />
 
-      <IconButton
-        label={aiSettings?.key ? t("toolbarAiSettings") : t("toolbarAiKey")}
-        onClick={openAiSettings}
-        className="relative"
-      >
-        <KeyIcon />
-        {!aiSettings?.key && <span aria-hidden className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-accent" />}
-      </IconButton>
+      {aiSettings?.key ? (
+        <IconButton label={t("toolbarAiSettings")} onClick={openAiSettings}>
+          <KeyIcon />
+        </IconButton>
+      ) : (
+        // Key yokken yeni kullanıcı görsün diye ikon değil, yazılı ve vurgulu buton
+        <button
+          onClick={openAiSettings}
+          title={t("toolbarAiKey")}
+          className="mx-1 flex shrink-0 items-center gap-1.5 border border-accent px-2 py-0.5 text-accent hover:bg-accent hover:text-sheet"
+        >
+          <KeyIcon />
+          <span className="whitespace-nowrap">{t("toolbarAddKey")}</span>
+        </button>
+      )}
       <button
         onClick={p.onChat}
         title={t("toolbarAskSelection")}

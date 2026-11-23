@@ -5,8 +5,8 @@ import { PDFDocument, StandardFonts, rgb } from "@cantoo/pdf-lib";
 
 const root = new URL("../", import.meta.url);
 const doc = await PDFDocument.create();
-doc.setTitle("Welcome - PDF Reader");
-doc.setAuthor("PDF Reader");
+doc.setTitle("Welcome - Okuma");
+doc.setAuthor("Okuma");
 doc.setSubject("An original, hands-on guide to reading, notes and AI");
 // Stable metadata makes regenerating the sample content-key deterministic.
 doc.setCreationDate(new Date("2026-01-01T00:00:00Z"));
@@ -55,7 +55,7 @@ function section(title, body) {
 function start(kicker, title, subtitle) {
   page = doc.addPage([width, height]);
   page.drawRectangle({ x: 0, y: 0, width, height, color: rgb(0.985, 0.978, 0.957) });
-  page.drawText("PDF READER  /  FIELD GUIDE", { x: margin, y: height - 43, font: sans, size: 8, color: muted });
+  page.drawText("OKUMA  /  FIELD GUIDE", { x: margin, y: height - 43, font: sans, size: 8, color: muted });
   page.drawLine({ start: { x: margin, y: height - 57 }, end: { x: width - margin, y: height - 57 }, thickness: 0.5, color: muted });
   y = height - 99;
   text(kicker.toUpperCase(), { font: sans, size: 9, color: accent, gap: 24 });
@@ -67,7 +67,7 @@ function start(kicker, title, subtitle) {
 }
 
 start("01 / Start here", "Welcome.", "A quiet place to read, mark up and understand your PDFs.");
-text("PDF Reader keeps your books, highlights, notes and reading position together in this browser. Open a document, keep the passages that matter, then use AI when you want another explanation or a practice quiz.");
+text("Okuma keeps your books, highlights, notes and reading position together in this browser. Open a document, keep the passages that matter, then use AI when you want another explanation or a practice quiz.");
 section("Try it in under a minute", "Select a sentence below and press H to highlight it. Press N to open a sticky note and write one thought. With your own API key added, select a passage and press Ctrl + K to ask a question. Press ? whenever you want the shortcut list.");
 text("PRACTICE PASSAGE", { font: sans, size: 9, color: accent, gap: 8 });
 text("Each morning, Mira carried a small notebook to the garden behind the library. She recorded where the shade ended, which flowers opened first, and how the soil felt after rain. At first the entries seemed unrelated. After several weeks, she noticed that the seedlings beside the stone wall grew more slowly, even though they received the same water as the others.", { size: 14 });
@@ -82,7 +82,7 @@ section("Write directly on the page", "Use D for the pen, M for the marker, T to
 text("Small experiment: highlight one observation on page 1, then write a note explaining why it matters.", { size: 13, color: accent });
 
 start("03 / A reading companion", "Ask a better question.", "Your own AI key unlocks explanations, translations and quizzes.");
-section("Add a free Gemini key", "Open AI settings from the toolbar (or the button in the getting-started tips). Choose Google Gemini, open the key page below, create a key with your Google account, then paste it into the API key field and save. Gemini has a free tier; availability and usage limits depend on Google's terms.");
+section("Add a free Gemini key", "Click \"Add AI key\" in the toolbar (or the button in the getting-started tips). Choose Google Gemini, open the key page below, create a key with your Google account, then paste it into the API key field and save. Gemini has a free tier; availability and usage limits depend on Google's terms.");
 text("https://aistudio.google.com/apikey", { font: sans, size: 13, color: accent, gap: 22 });
 section("Ask about a selection", "Select a passage and press Ctrl + K to open the chat with that context. Try: 'Why did Mira move only one pot?' You can also double-click a word to request its meaning in context and a sentence translation.");
 section("Ask about a page", "Open chat with Ctrl + K and ask about the current page, or specify the page number in your prompt. Try: 'Summarize page 1 in three points.' Check the response against the PDF; AI can make mistakes.");
@@ -98,14 +98,14 @@ text("You can also keep difficult questions: Q crops a question from the page; E
 start("05 / Keep your work", "Your browser. Your library.", "Local storage is convenient. A backup makes it portable.");
 section("Your reading data stays here", "Your imported PDFs, notes, highlights and reading progress are stored in this browser on this device. There is no account-based sync. A different browser or device has a separate library. Clearing site data can remove your work.");
 section("AI uses the context you request", "Local reading does not need an AI service. When you use AI, the relevant selection, pages or other request context is sent to your chosen AI provider through the app's API. Your key stays in browser settings between requests; it is not an app account password.");
-section("Download a backup", "Open the library with L and choose 'Yedek al' / 'Yedeği indir' (download backup). Keep the downloaded JSON somewhere safe. It contains your saved study data, not the original PDF files. Keep copies of your PDFs separately too.");
-section("Restore on another browser", "Choose 'Yedekten yükle' (restore backup) in the library and select your saved JSON. Import the same PDF files again to reconnect their notes and highlights. Keep your API key separately; do not assume it is included in a study backup.");
+section("Download a backup", "Open the library with L and choose 'Back up'. Keep the downloaded JSON somewhere safe. It contains your saved study data, not the original PDF files. Keep copies of your PDFs separately too.");
+section("Restore on another browser", "Choose 'Restore backup' in the library and select your saved JSON. Import the same PDF files again to reconnect their notes and highlights. Keep your API key separately; do not assume it is included in a study backup.");
 section("Take an annotated PDF with you", "Ctrl + S writes annotations into a PDF and saves it. Ctrl + Shift + S chooses a new save location. A PDF export and a study-data backup serve different purposes; keep both when your work matters.");
 
 start("06 / Keep nearby", "Keyboard shortcuts.", "Press ? in the reader for the current list and to reopen the tour.");
 // Read the actual keys from the app, and require a matching English description.
 const source = await readFile(new URL("src/components/shortcuts-dialog.tsx", root), "utf8");
-const shortcutsBlock = source.match(/const SHORTCUTS:[\s\S]*?= \[([\s\S]*?)\n\];/)?.[1];
+const shortcutsBlock = source.match(/const SHORTCUTS(?::[^=]*)? = \[([\s\S]*?)\n\](?: as const)?;/)?.[1];
 if (!shortcutsBlock) throw new Error("Cannot find the reader shortcut list");
 const english = [
   "Ask about selected text (chat)", "Library; Esc returns to reading", "Next / previous page",
@@ -125,6 +125,8 @@ const translatedKeys = {
   "→  /  ←": "Right / Left", "Ctrl + +  /  Ctrl + −": "Ctrl + + / Ctrl + -",
   "Ctrl + tekerlek": "Ctrl + wheel", "Çift tık": "Double-click",
   "Shift + sürükle": "Shift + drag", "Sağ tık basılı": "Hold right-click",
+  shortcutsKeyWheel: "Ctrl + wheel", shortcutsKeyDoubleClick: "Double-click",
+  shortcutsKeyDrag: "Shift + drag", shortcutsKeyRightClick: "Hold right-click",
 };
 for (const [i, key] of keys.entries()) {
   const keyText = translatedKeys[key] ?? key;
