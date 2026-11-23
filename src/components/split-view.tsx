@@ -1,5 +1,7 @@
 "use client";
 
+import { useT } from "@/lib/i18n";
+
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import Reader from "./reader";
 
@@ -42,6 +44,7 @@ function initialPanes(): Pane[] {
 }
 
 export default function SplitView() {
+  const t = useT("library");
   const [panes, setPanes] = useState(initialPanes);
   const [active, setActive] = useState(0);
   const [ratio, setRatio] = useState(() => readLayout().ratio ?? DEFAULT_RATIO);
@@ -130,8 +133,8 @@ export default function SplitView() {
         <div
           role="separator"
           aria-orientation="vertical"
-          aria-label="Bölme genişliği"
-          title="Sürükleyerek genişliği ayarla · çift tıkla: eşit"
+          aria-label={t("splitWidth")}
+          title={t("splitResize")}
           onPointerDown={(e) => {
             e.preventDefault();
             e.currentTarget.setPointerCapture(e.pointerId);
@@ -198,7 +201,7 @@ export default function SplitView() {
             {target && (
               <span className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center border-2 border-accent/70 bg-accent/5">
                 <span className="border border-rule bg-paper px-3 py-1.5 font-serif text-sm">
-                  Bırak: yer değiştir
+                  {t("splitDropSwap")}
                 </span>
               </span>
             )}

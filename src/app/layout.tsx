@@ -21,7 +21,7 @@ const plex = IBM_Plex_Sans({
 
 export const metadata: Metadata = {
   title: "Okuma",
-  description: "Seçtiğin kelimeleri Türkçeye çeviren PDF okuyucu",
+  description: "A PDF reader for highlighting, taking notes, and translating words in context",
   applicationName: "Okuma",
   icons: { icon: "/icon.svg", apple: "/apple-icon.png" },
   appleWebApp: { capable: true, title: "Okuma", statusBarStyle: "default" },

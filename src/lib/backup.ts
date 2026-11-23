@@ -1,5 +1,6 @@
 "use client";
 
+import { translate } from "./i18n";
 import { exportQuestions, importQuestions } from "./questions";
 import { exportData, importData, type Backup } from "./storage";
 
@@ -14,7 +15,7 @@ export async function downloadBackup() {
   const url = URL.createObjectURL(new Blob([JSON.stringify(backup)], { type: "application/json" }));
   const a = document.createElement("a");
   a.href = url;
-  a.download = `okuma-yedek-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = translate("library", "backupFileName", { date: new Date().toISOString().slice(0, 10) });
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
@@ -25,7 +26,7 @@ export async function restoreBackup(file: File) {
   try {
     backup = JSON.parse(await file.text());
   } catch {
-    throw new Error("Dosya okunamadı; bir yedek dosyası seç.");
+    throw new Error(translate("library", "backupUnreadable"));
   }
   importData(backup);
   if (Array.isArray(backup.questions)) await importQuestions(backup.questions);

@@ -1,3 +1,5 @@
+import { translate } from "./i18n";
+
 // Kitaplık: açılan/eklenen PDF'ler IndexedDB'de tutulur. Sayfa yenilense de kaybolmaz,
 // kitaplıktan tek tıkla açılır. Kapak ve sayfa sayısı ilk açılışta hesaplanıp saklanır.
 
@@ -171,7 +173,7 @@ export function addWelcomeBook(onlyFirstVisit = false): Promise<string | null> {
     }
     const response = await fetch("/samples/welcome.pdf");
     if (!response.ok) throw new Error("welcome_pdf_unavailable");
-    const file = new File([await response.blob()], "Welcome.pdf", {
+    const file = new File([await response.blob()], translate("library", "librarySampleFileName"), {
       type: "application/pdf",
       lastModified: 0,
     });
