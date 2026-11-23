@@ -45,3 +45,6 @@ next-env.d.ts
 
 # pdf.js dosyaları (postinstall ile kopyalanır)
 /public/pdfjs
+
+# local agent skills (not part of the app)
+/.agents/
