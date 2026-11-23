@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from "react";
 import type { Translation } from "@/lib/types";
+import { openAiSettings, useAiSettings } from "@/lib/ai-settings";
+import { clientAiErrorCode } from "@/lib/chat";
 import Highlighted from "./highlighted";
 import HighlightSwatches from "./highlight-swatches";
 
@@ -24,9 +26,19 @@ type Props = {
 };
 
 const WIDTH = 380;
+const AI_COPY = {
+  addKey: "AI özellikleri için API key ekle",
+  settings: "API key ekle / düzenle",
+  invalidKey: "API key eksik ya da geçersiz",
+  rateLimited: "Sağlayıcı limitine takıldın, biraz sonra tekrar dene.",
+  failed: "Çeviri alınamadı, tekrar dene.",
+};
 
 export default function TranslationPopover({ state, onClose, onAsk, highlightColor, onHighlight }: Props) {
   const ref = useRef<HTMLDivElement>(null);
+  const settings = useAiSettings();
+  const code = clientAiErrorCode(state.error);
+  const needsKey = !settings?.key || code === "missing_api_key" || code === "invalid_api_key";
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -62,11 +74,22 @@ export default function TranslationPopover({ state, onClose, onAsk, highlightCol
         )}
       </div>
 
-      {state.status === "loading" && (
+      {needsKey ? (
+        <div className="mt-2 text-sm text-muted">
+          <p>{settings?.key ? AI_COPY.invalidKey : AI_COPY.addKey}</p>
+          <button onClick={openAiSettings} className="mt-2 border border-rule px-3 py-1.5 text-ink hover:border-ink">
+            {AI_COPY.settings}
+          </button>
+        </div>
+      ) : state.status === "loading" && (
         <p className="mt-2 animate-pulse text-sm text-muted">Çevriliyor…</p>
       )}
 
-      {state.status === "error" && <p className="mt-2 text-sm text-accent">{state.error}</p>}
+      {!needsKey && state.status === "error" && (
+        <p className="mt-2 text-sm text-accent">
+          {code === "rate_limited" ? AI_COPY.rateLimited : code === "ai_error" ? AI_COPY.failed : state.error}
+        </p>
+      )}
 
       {state.status === "done" && result && (
         <>
@@ -83,7 +106,7 @@ export default function TranslationPopover({ state, onClose, onAsk, highlightCol
       )}
 
       <div className="mt-4 -mb-1.5 flex items-center justify-between">
-        {state.status !== "loading" ? (
+        {needsKey ? <span /> : state.status !== "loading" ? (
           <button
             onMouseDown={(e) => e.preventDefault()}
             onClick={onAsk}

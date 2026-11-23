@@ -38,6 +38,7 @@ import {
 } from "@/lib/annotations";
 import type { PaperStyle } from "@/lib/blank-book";
 import type { Reference } from "@/lib/chat";
+import { aiHeaders, hasAiKey } from "@/lib/ai-settings";
 import { deleteBookOcr, renameBookOcr, setOcrEnabled, useOcrEnabled } from "@/lib/ocr";
 import type { MarkInput } from "@/lib/page-marks";
 import { getPageText, usePdfSearch } from "@/lib/pdf-search";
@@ -994,9 +995,10 @@ export default function Reader({ pane }: { pane: PaneProps }) {
     setPopover({ x, y, word: picked.word, sentence: picked.sentence, status: "loading" });
 
     try {
+      if (!hasAiKey()) throw new Error("missing_api_key");
       const res = await fetch("/api/translate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...aiHeaders() },
         body: JSON.stringify({ word: picked.word, sentence: picked.sentence }),
         signal: controller.signal,
       });

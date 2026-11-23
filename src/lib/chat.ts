@@ -6,6 +6,22 @@ import type { QuizTools } from "./quiz";
 import type { SkillRequest } from "./skills";
 import type { WordTools } from "./words";
 
+/** HTTP JSON errors and AI SDK stream errors use the same public codes. */
+export function clientAiErrorCode(error: unknown): "missing_api_key" | "invalid_api_key" | "rate_limited" | "ai_error" | null {
+  const message = error instanceof Error ? error.message : error;
+  let code = message;
+  if (typeof message === "string") {
+    try {
+      code = (JSON.parse(message) as { error?: unknown })?.error ?? message;
+    } catch {
+      // Stream errors contain the code directly instead of a JSON body.
+    }
+  }
+  return code === "missing_api_key" || code === "invalid_api_key" || code === "rate_limited" || code === "ai_error"
+    ? code
+    : null;
+}
+
 /** Sohbete eklenen PDF bölümü. */
 export type Reference = {
   text: string;

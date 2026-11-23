@@ -7,6 +7,8 @@ import { generateToc, useGeneratedToc } from "@/lib/generated-toc";
 import { getPageText } from "@/lib/pdf-search";
 import type { SearchHit } from "@/lib/pdf-search";
 import { QuestionsTab } from "./questions";
+import { hasAiKey, openAiSettings, useAiSettings } from "@/lib/ai-settings";
+import { clientAiErrorCode } from "@/lib/chat";
 
 export type LeftTab = "contents" | "bookmarks" | "highlights" | "questions" | "search";
 
@@ -160,6 +162,15 @@ function GeneratedContents({
   book: string | null;
   onGoTo: (page: number) => void;
 }) {
+  const AI_COPY = {
+    addKey: "AI özellikleri için API key ekle",
+    settings: "API key ekle / düzenle",
+    invalidKey: "API key eksik ya da geçersiz",
+    rateLimited: "Sağlayıcı limitine takıldın, biraz sonra tekrar dene.",
+    failed: "İçindekiler oluşturulamadı, tekrar dene.",
+  };
+  const settings = useAiSettings();
+  const [requestSettings, setRequestSettings] = useState(settings);
   const items = useGeneratedToc(book);
   const [state, setState] = useState<{ status: "idle" | "loading" | "missing" | "error"; error?: string }>({
     status: "idle",
@@ -167,6 +178,8 @@ function GeneratedContents({
 
   const generate = async () => {
     if (!book) return;
+    if (!hasAiKey()) return openAiSettings();
+    setRequestSettings(settings);
     setState({ status: "loading" });
     try {
       const result = await generateToc(pdf, book, (p) => getPageText(pdf, p, book));
@@ -177,6 +190,21 @@ function GeneratedContents({
   };
 
   const loading = state.status === "loading";
+  const code = requestSettings === settings ? clientAiErrorCode(state.error) : null;
+  const needsKey = !settings?.key || code === "missing_api_key" || code === "invalid_api_key";
+  const keyCta = (
+    <div className="mt-3 text-xs text-muted">
+      <p>{settings?.key ? AI_COPY.invalidKey : AI_COPY.addKey}</p>
+      <button onClick={openAiSettings} className="mt-2 border border-rule px-3 py-1.5 text-ink hover:border-ink">
+        {AI_COPY.settings}
+      </button>
+    </div>
+  );
+  const errorNotice = !needsKey && requestSettings === settings && state.status === "error" && (
+    <p className="mt-3 text-xs text-accent">
+      {code === "rate_limited" ? AI_COPY.rateLimited : code === "ai_error" ? AI_COPY.failed : state.error}
+    </p>
+  );
 
   if (items && !loading) {
     return (
@@ -200,10 +228,12 @@ function GeneratedContents({
         </ul>
         <p className="border-t border-rule px-5 py-3 text-xs leading-relaxed text-muted">
           Kitabın basılı içindekiler sayfasından otomatik çıkarıldı; sayfalar birkaç sayfa kayabilir.{" "}
-          <button onClick={generate} className="underline underline-offset-2 hover:text-ink">
+          <button onClick={needsKey ? openAiSettings : generate} className="underline underline-offset-2 hover:text-ink">
             Yeniden oluştur
           </button>
         </p>
+        {needsKey && <div className="px-5 pb-3">{keyCta}</div>}
+        {errorNotice && <div className="px-5 pb-3">{errorNotice}</div>}
       </div>
     );
   }
@@ -215,19 +245,19 @@ function GeneratedContents({
         Kitabın basılı içindekiler sayfası varsa yapay zekayla okunup buraya tıklanabilir liste olarak
         eklenebilir. Kitap başına bir kez yapılır.
       </p>
-      <button
+      {needsKey ? keyCta : <button
         onClick={generate}
         disabled={loading || !book}
         className="mt-4 border border-rule px-3 py-1.5 text-ink transition-colors hover:border-ink disabled:animate-pulse disabled:hover:border-rule"
       >
         {loading ? "İçindekiler çıkarılıyor…" : "İçindekileri oluştur"}
-      </button>
+      </button>}
       {state.status === "missing" && (
         <p className="mt-3 text-xs text-accent">
           İlk sayfalarda basılı bir içindekiler listesi bulunamadı.
         </p>
       )}
-      {state.status === "error" && <p className="mt-3 text-xs text-accent">{state.error}</p>}
+      {errorNotice}
     </div>
   );
 }
