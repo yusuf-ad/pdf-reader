@@ -4,7 +4,7 @@ Kararlar (grill oturumu, 2026-11-23):
 
 - Hedef: önce ilk izlenim (canlı demo + GIF), sonra gerçek kullanım.
 - Vercel'de public demo. Vercel env'de **OPENAI_API_KEY olmayacak**.
-- BYOK: key tarayıcıda (localStorage), her istekte header ile `/api/*`'ye gider; sunucu key'i saklamaz/loglamaz. Env key sadece self-host fallback'i.
+- BYOK: key tarayıcıda (localStorage), her istekte header ile `/api/*`'ye gider; sunucu key'i saklamaz/loglamaz. **Sunucuda env/yedek key yok** (kullanıcı kararı): key gelmezse istek 401.
 - Provider v1: **OpenAI + Google Gemini** (Gemini = ücretsiz key, varsayılan öneri). OpenRouter / Anthropic / Ollama → v2.
 - Key yoksa: okuma, highlight, not, export çalışır; AI butonları "API key ekle" CTA'sı gösterir.
 - İlk açılış: örnek PDF + atlanabilir 3–4 adımlık ipucu turu.
@@ -25,7 +25,7 @@ Kararlar (grill oturumu, 2026-11-23):
 | `x-ai-model` | opsiyonel; yoksa provider varsayılanı |
 | `x-ui-lang` | `en` \| `tr` (Wave 3'te eklenir) |
 
-Key'siz ve env fallback'siz istek → `401 { error: "missing_api_key" }`. İstemci bu kodu görünce ayarlar diyaloğunu açar.
+Key'siz istek → `401 { error: "missing_api_key" }`. İstemci bu kodu görünce ayarlar diyaloğunu açar.
 
 ## Sıfırıncı adım (kullanıcı)
 

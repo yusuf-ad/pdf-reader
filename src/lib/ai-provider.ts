@@ -4,7 +4,8 @@ import type { LanguageModel, streamText, Tool } from "ai";
 
 /**
  * Bring-your-own-key: istemci key'i her istekte header'la gönderir, sunucu onunla modeli kurar.
- * Key hiçbir yerde saklanmaz ya da loglanmaz. Header yoksa self-host için env key'e düşer.
+ * Key hiçbir yerde saklanmaz ya da loglanmaz. Sunucuda yedek (env) key yoktur: key gelmezse
+ * istek reddedilir, böylece hiçbir dağıtım başkasının faturasıyla AI çalıştıramaz.
  * Header adları istemciyle (src/lib/ai-settings.ts) sabit sözleşmedir.
  */
 export const AI_HEADERS = {
@@ -16,9 +17,9 @@ export const AI_HEADERS = {
 export const AI_PROVIDERS = ["openai", "google"] as const;
 export type AiProvider = (typeof AI_PROVIDERS)[number];
 
-const DEFAULT_MODELS: Record<AiProvider, () => string> = {
-  openai: () => process.env.OPENAI_MODEL || "gpt-6-luna",
-  google: () => process.env.GOOGLE_MODEL || "gemini-3.8-flash",
+const DEFAULT_MODELS: Record<AiProvider, string> = {
+  openai: "gpt-6-luna",
+  google: "gemini-3.8-flash",
 };
 
 type ProviderOptions = NonNullable<Parameters<typeof streamText>[0]["providerOptions"]>;
@@ -58,21 +59,16 @@ function build(provider: AiProvider, apiKey: string, modelId: string): Ai {
   };
 }
 
-/** İstekten modeli kurar; key yoksa (header da env de) null döner → `missingKeyResponse()`. */
+/** İstekteki kullanıcı key'iyle modeli kurar; key yoksa null döner → `missingKeyResponse()`. */
 export function getAi(req: Request): Ai | null {
   const headerKey = req.headers.get(AI_HEADERS.key)?.trim();
   const headerProvider = req.headers.get(AI_HEADERS.provider);
   const headerModel = req.headers.get(AI_HEADERS.model)?.trim();
 
   if (headerKey && headerKey.length <= 500 && isProvider(headerProvider)) {
-    const modelId = headerModel && MODEL_RE.test(headerModel) ? headerModel : DEFAULT_MODELS[headerProvider]();
+    const modelId = headerModel && MODEL_RE.test(headerModel) ? headerModel : DEFAULT_MODELS[headerProvider];
     return build(headerProvider, headerKey, modelId);
   }
-
-  // Self-host: kullanıcı key girmediyse sunucunun env key'i (Vercel demosunda tanımlı değil)
-  if (process.env.OPENAI_API_KEY) return build("openai", process.env.OPENAI_API_KEY, DEFAULT_MODELS.openai());
-  if (process.env.GOOGLE_GENERATIVE_AI_API_KEY)
-    return build("google", process.env.GOOGLE_GENERATIVE_AI_API_KEY, DEFAULT_MODELS.google());
   return null;
 }
 
