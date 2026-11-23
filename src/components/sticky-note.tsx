@@ -1,5 +1,6 @@
 "use client";
 
+import { getLang, translate, useLang, useT } from "@/lib/i18n";
 import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode, type RefObject } from "react";
 import {
   adoptLegacyNote,
@@ -47,6 +48,8 @@ export default function StickyNoteCard({
   boundsRef: RefObject<HTMLElement | null>;
   onClose: () => void;
 }) {
+  const t = useT("reader");
+  const lang = useLang();
   const card = useStickyCard();
   const notes = useStickyNotes();
   // Sürüklerken her harekette depoya yazmamak için geçici konum/boyut
@@ -138,7 +141,7 @@ export default function StickyNoteCard({
 
   const remove = () => {
     if (!note) return;
-    if (!isBlank(note) && !confirm(`“${noteTitle(note) || "Başlıksız not"}” silinsin mi?`)) return;
+    if (!isBlank(note) && !confirm(translate("reader", "stickyDeleteConfirm", { title: noteTitle(note) || translate("reader", "stickyUntitled") }))) return;
     deleteNote(note.id);
     updateCard({ current: null });
   };
@@ -146,40 +149,40 @@ export default function StickyNoteCard({
   return (
     <div
       role="dialog"
-      aria-label="Notlar"
+      aria-label={t("stickyNotes")}
       style={{ left: x, top: y, width: w, height: h }}
       className="absolute z-20 flex flex-col border border-rule border-t-[3px] border-t-accent/70 bg-sheet shadow-[0_6px_24px_var(--shadow)]"
     >
       <div
         onPointerDown={(e) => start("move", e)}
         {...handlers}
-        title="Tutup sürükle"
+        title={t("stickyDrag")}
         className="flex h-8 shrink-0 cursor-grab touch-none items-center gap-0.5 border-b border-rule px-1 select-none active:cursor-grabbing"
       >
-        <HeaderButton label="Tüm notlar" active={showList} onClick={() => updateCard({ listOpen: !card.listOpen })}>
+        <HeaderButton label={t("stickyAllNotes")} active={showList} onClick={() => updateCard({ listOpen: !card.listOpen })}>
           <ListIcon />
         </HeaderButton>
         <span className="min-w-0 flex-1 truncate px-1 text-[11px] tracking-wider text-muted uppercase">
-          {showList && !sideBySide ? `Notlar · ${notes.length}` : note ? longDate(note.updatedAt) : "Yeni not"}
+          {showList && !sideBySide ? t("stickyCount", { n: notes.length }) : note ? longDate(note.updatedAt, lang) : t("stickyNewNote")}
         </span>
         {showEditor && note && (
           <>
             <HeaderButton
-              label={note.pinned ? "Sabitlemeyi kaldır" : "Listenin başına sabitle"}
+              label={note.pinned ? t("stickyUnpin") : t("stickyPin")}
               active={note.pinned}
               onClick={() => updateNote(note.id, { pinned: !note.pinned })}
             >
               <PinIcon filled={note.pinned} />
             </HeaderButton>
-            <HeaderButton label="Notu sil" onClick={remove}>
+            <HeaderButton label={t("stickyDelete")} onClick={remove}>
               <TrashIcon />
             </HeaderButton>
           </>
         )}
-        <HeaderButton label="Yeni not" onClick={() => open(null)}>
+        <HeaderButton label={t("stickyNewNote")} onClick={() => open(null)}>
           <NewNoteIcon />
         </HeaderButton>
-        <HeaderButton label="Kapat  N  (notlar kalır)" onClick={onClose}>
+        <HeaderButton label={t("stickyClose")} onClick={onClose}>
           <span className="text-base leading-none">×</span>
         </HeaderButton>
       </div>
@@ -199,16 +202,16 @@ export default function StickyNoteCard({
                   if (query) setQuery("");
                   else e.currentTarget.blur();
                 }}
-                placeholder="Ara"
+                placeholder={t("stickySearch")}
                 spellCheck={false}
                 className="min-w-0 flex-1 border-b border-rule bg-transparent py-0.5 text-xs outline-none focus:border-ink"
               />
               <button
                 onClick={() => setOnlyBook((o) => !o)}
-                title={onlyBook ? "Tüm kitapların notlarını göster" : "Yalnızca bu kitabın notlarını göster"}
+                title={onlyBook ? t("stickyShowAllBooks") : t("stickyShowThisBook")}
                 className={`shrink-0 text-[11px] ${onlyBook ? "text-ink" : "text-muted hover:text-ink"}`}
               >
-                {onlyBook ? "Bu kitap" : "Tümü"}
+                {onlyBook ? t("stickyThisBook") : t("stickyAll")}
               </button>
             </div>
             <ul className="min-h-0 flex-1 overflow-y-auto">
@@ -216,7 +219,7 @@ export default function StickyNoteCard({
                 <li key={n.id}>
                   {!!n.pinned !== !!shown[i - 1]?.pinned && shown.some((s) => s.pinned) && (
                     <p className="px-3 pt-2.5 pb-1 text-[10px] tracking-wider text-muted uppercase">
-                      {n.pinned ? "Sabitlenenler" : "Notlar"}
+                      {n.pinned ? t("stickyPinned") : t("stickyNotes")}
                     </p>
                   )}
                   <NoteRow note={n} active={n.id === card.current} onClick={() => open(n.id)} />
@@ -224,7 +227,7 @@ export default function StickyNoteCard({
               ))}
               {shown.length === 0 && (
                 <li className="px-3 py-6 text-center text-xs text-muted">
-                  {query || onlyBook ? "Eşleşen not yok" : "Henüz not yok"}
+                  {query || onlyBook ? t("stickyNoMatches") : t("stickyEmpty")}
                 </li>
               )}
             </ul>
@@ -249,7 +252,7 @@ export default function StickyNoteCard({
                   requestAnimationFrame(() => bodyRef.current?.setSelectionRange(0, 0));
                 }
               }}
-              placeholder="Başlık"
+              placeholder={t("stickyTitle")}
               spellCheck={false}
               className="w-full shrink-0 bg-transparent font-serif text-lg font-semibold text-ink outline-none placeholder:text-muted/60"
             />
@@ -257,11 +260,11 @@ export default function StickyNoteCard({
               <button
                 onClick={() => note.book === book && note.page && onGoTo(note.page)}
                 disabled={note.book !== book || !note.page}
-                title={note.book === book && note.page ? `${note.page}. sayfaya git` : undefined}
+                title={note.book === book && note.page ? t("stickyGoToPage", { page: note.page }) : undefined}
                 className="w-fit max-w-full shrink-0 truncate text-left text-[11px] text-muted enabled:hover:text-ink"
               >
                 {note.bookTitle}
-                {note.page ? ` · s. ${note.page}` : ""}
+                {note.page ? t("stickyPageSuffix", { page: note.page }) : ""}
               </button>
             )}
             <textarea
@@ -281,7 +284,7 @@ export default function StickyNoteCard({
                   requestAnimationFrame(() => titleRef.current?.setSelectionRange(at, at));
                 }
               }}
-              placeholder="Not al…"
+              placeholder={t("stickyBody")}
               spellCheck={false}
               className="mt-1.5 min-h-0 w-full flex-1 resize-none bg-transparent font-serif text-[15px] leading-relaxed text-ink outline-none placeholder:text-muted/60"
             />
@@ -292,7 +295,7 @@ export default function StickyNoteCard({
       <div
         onPointerDown={(e) => start("resize", e)}
         {...handlers}
-        title="Boyutlandır"
+        title={t("stickyResize")}
         className="absolute right-0 bottom-0 h-3.5 w-3.5 cursor-nwse-resize touch-none"
       >
         <svg viewBox="0 0 10 10" className="h-full w-full text-muted/60" aria-hidden>
@@ -304,6 +307,8 @@ export default function StickyNoteCard({
 }
 
 function NoteRow({ note, active, onClick }: { note: StickyNote; active: boolean; onClick: () => void }) {
+  const t = useT("reader");
+  const lang = useLang();
   const preview = note.text.split("\n").slice(1).find((l) => l.trim())?.trim();
   return (
     <button
@@ -311,12 +316,12 @@ function NoteRow({ note, active, onClick }: { note: StickyNote; active: boolean;
       className={`block w-full border-b border-rule/60 px-3 py-2 text-left ${active ? "bg-ink/8" : "hover:bg-ink/4"}`}
     >
       <span className="block truncate font-serif text-sm font-semibold text-ink">
-        {noteTitle(note) || "Yeni not"}
+        {noteTitle(note) || t("stickyNewNote")}
       </span>
       <span className="block truncate text-[11px] text-muted">
-        <span className="tabular-nums">{shortDate(note.updatedAt)}</span>
+        <span className="tabular-nums">{shortDate(note.updatedAt, lang)}</span>
         {"  "}
-        {preview ?? "Ek metin yok"}
+        {preview ?? t("stickyNoBody")}
       </span>
       {note.bookTitle && <span className="block truncate text-[10px] text-muted/80">{note.bookTitle}</span>}
     </button>
@@ -351,17 +356,17 @@ function HeaderButton({
 const DAY = 24 * 60 * 60 * 1000;
 
 /** Notlar'daki gibi: bugün saat, dün "Dün", bu hafta gün adı, daha eskisi tarih */
-function shortDate(t: number) {
+function shortDate(t: number, lang = getLang()) {
   const d = new Date(t);
   const today = new Date().setHours(0, 0, 0, 0);
-  if (t >= today) return d.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
-  if (t >= today - DAY) return "Dün";
-  if (t >= today - 6 * DAY) return d.toLocaleDateString("tr-TR", { weekday: "long" });
-  return d.toLocaleDateString("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  if (t >= today) return d.toLocaleTimeString(lang === "tr" ? "tr-TR" : "en-US", { hour: "2-digit", minute: "2-digit" });
+  if (t >= today - DAY) return translate("reader", "stickyYesterday", undefined, lang);
+  if (t >= today - 6 * DAY) return d.toLocaleDateString(lang === "tr" ? "tr-TR" : "en-US", { weekday: "long" });
+  return d.toLocaleDateString(lang === "tr" ? "tr-TR" : "en-US", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
-function longDate(t: number) {
-  return new Date(t).toLocaleString("tr-TR", {
+function longDate(t: number, lang = getLang()) {
+  return new Date(t).toLocaleString(lang === "tr" ? "tr-TR" : "en-US", {
     day: "numeric",
     month: "long",
     year: "numeric",

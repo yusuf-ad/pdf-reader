@@ -58,10 +58,10 @@ export type Picture = {
 };
 
 export const HIGHLIGHT_COLORS = [
-  { color: "#f5c518", label: "Sarı" },
-  { color: "#7bc96f", label: "Yeşil" },
-  { color: "#5aa9e6", label: "Mavi" },
-  { color: "#f27aa6", label: "Pembe" },
+  { color: "#f5c518", label: "colorYellow" },
+  { color: "#7bc96f", label: "colorGreen" },
+  { color: "#5aa9e6", label: "colorBlue" },
+  { color: "#f27aa6", label: "colorPink" },
 ] as const;
 
 export type Annotation = Stroke | Note | Highlight | Picture;

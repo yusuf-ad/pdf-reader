@@ -1,5 +1,7 @@
 "use client";
 
+import { translate } from "./i18n";
+
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { getBookAnnotations, HIGHLIGHT_COLORS, type Annotation } from "./annotations";
 import { loadOcr } from "./ocr";
@@ -20,7 +22,7 @@ const TOTAL_CHARS = 12000;
 const STEP = 0.004;
 
 const COLOR_NAMES: Record<string, string> = Object.fromEntries(
-  HIGHLIGHT_COLORS.map((c) => [c.color.toLowerCase(), c.label.toLocaleLowerCase("tr")]),
+  HIGHLIGHT_COLORS.map((c) => [c.color.toLowerCase(), translate("reader", c.label, undefined, "tr").toLocaleLowerCase("tr")]),
 );
 const colorName = (c: string) => COLOR_NAMES[c.toLowerCase()] ?? c;
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { translate, useT } from "@/lib/i18n";
 import dynamic from "next/dynamic";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import {
@@ -112,6 +113,7 @@ export type PaneProps = {
 };
 
 export default function Reader({ pane }: { pane: PaneProps }) {
+  const t = useT("reader");
   const [file, setFile] = useState<File | null>(null);
   // Açık kitabın anahtarı (PDF içeriğinden; notlar buna bağlı)
   const [key, setKey] = useState<string | null>(null);
@@ -351,7 +353,7 @@ export default function Reader({ pane }: { pane: PaneProps }) {
         await openFile(next, k);
         setScale(keepScale);
       } catch (err) {
-        alert(`Sayfa eklenemedi: ${(err as Error).message}`);
+        alert(translate("reader", "readerInsertFailed", { error: (err as Error).message }));
       } finally {
         setInserting(false);
       }
@@ -656,8 +658,8 @@ export default function Reader({ pane }: { pane: PaneProps }) {
       } catch (err) {
         if ((err as Error).name === "NotFoundError") {
           setSavedTo(null);
-          alert("Son kaydedilen dosya bulunamadı (taşınmış ya da silinmiş olabilir). Tekrar kaydet; yer sorulacak.");
-        } else alert(`PDF kaydedilemedi: ${(err as Error).message}`);
+          alert(translate("reader", "readerSavedFileMissing"));
+        } else alert(translate("reader", "readerSaveFailed", { error: (err as Error).message }));
       } finally {
         setSaving(false);
       }
@@ -735,7 +737,7 @@ export default function Reader({ pane }: { pane: PaneProps }) {
         const { image, sourceWidth } = await cropPages(pdf, parts);
         setQuestionDraft({ image, sourceWidth, book: key, bookName: file.name, page: parts[0].page });
       } catch (err) {
-        alert(`Soru kırpılamadı: ${(err as Error).message}`);
+        alert(translate("reader", "readerCropFailed", { error: (err as Error).message }));
       }
     },
     [pdf, file, key],
@@ -758,7 +760,7 @@ export default function Reader({ pane }: { pane: PaneProps }) {
       try {
         picture = await pictureFromBlob(image);
       } catch {
-        alert("Görsel okunamadı.");
+        alert(translate("reader", "readerImageUnreadable"));
         return;
       }
       setTool(null);
@@ -1003,7 +1005,7 @@ export default function Reader({ pane }: { pane: PaneProps }) {
         signal: controller.signal,
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Çeviri başarısız.");
+      if (!res.ok) throw new Error(data.error ?? translate("reader", "readerTranslationFailed"));
 
       const result = data as Translation;
       setPopover((p) => p && { ...p, status: "done", result });
@@ -1195,7 +1197,7 @@ export default function Reader({ pane }: { pane: PaneProps }) {
 
         {cropping && (
           <div className="pointer-events-none absolute top-16 left-1/2 z-20 -translate-x-1/2 border border-rule bg-sheet px-3 py-1.5 text-xs shadow-[0_4px_16px_var(--shadow)]">
-            Soruyu fareyle çerçevele · <span className="font-mono">Esc</span> vazgeç
+            {t("readerCropInstruction")}<span className="font-mono">{t("readerEscapeKey")}</span>{t("readerCropCancel")}
           </div>
         )}
 
@@ -1207,7 +1209,7 @@ export default function Reader({ pane }: { pane: PaneProps }) {
 
         {dragging && (
           <div className="pointer-events-none absolute inset-3 flex items-center justify-center border border-dashed border-ink/40 bg-paper/80 font-serif text-lg">
-            Bırak, açalım
+            {t("readerDropToOpen")}
           </div>
         )}
       </main>
@@ -1264,7 +1266,7 @@ export default function Reader({ pane }: { pane: PaneProps }) {
               await openFile(await blankBookPdf(title, pages, style));
             }}
             onClose={file ? () => setLibraryOpen(false) : pane.onClosePane}
-            closeLabel={file ? undefined : "Bölmeyi kapat"}
+            closeLabel={file ? undefined : t("readerClosePane")}
           />
         </div>
       )}
@@ -1285,12 +1287,12 @@ export default function Reader({ pane }: { pane: PaneProps }) {
           className="fixed z-30 flex items-center border border-rule bg-sheet text-sm shadow-[0_4px_16px_var(--shadow)]"
         >
           <button onClick={openChat} className="flex items-center gap-2 px-3 py-1.5 hover:text-ink">
-            Bu bölümü sor
-            <kbd className="font-mono text-[11px] text-muted">Ctrl K</kbd>
+            {t("readerAskSelection")}
+            <kbd className="font-mono text-[11px] text-muted">{t("readerAskShortcut")}</kbd>
           </button>
           <span className="h-5 w-px bg-rule" />
           <button onClick={noteSelection} className="px-3 py-1.5 hover:text-ink">
-            Nota ekle
+            {t("readerAddToNote")}
           </button>
           <span className="h-5 w-px bg-rule" />
           <HighlightSwatches current={highlightColor} onPick={highlightSelection} />
