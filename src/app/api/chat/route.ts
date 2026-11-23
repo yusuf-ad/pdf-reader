@@ -1,4 +1,4 @@
-import { openai } from "@ai-sdk/openai";
+import { aiErrorCode, type Ai, getAi, missingKeyResponse } from "@/lib/ai-provider";
 import { convertToModelMessages, generateText, hasToolCall, isStepCount, streamText } from "ai";
 import {
   formatBookContext,
@@ -64,15 +64,8 @@ ${SUGGESTIONS_OPEN}
 ${SUGGESTIONS_CLOSE}`;
 
 export async function POST(req: Request) {
-  if (!process.env.OPENAI_API_KEY) {
-    return Response.json(
-      {
-        error:
-          "OPENAI_API_KEY tanımlı değil (.env.local dosyasını kontrol et).",
-      },
-      { status: 500 },
-    );
-  }
+  const ai = getAi(req);
+  if (!ai) return missingKeyResponse();
 
   const {
     messages,
@@ -81,7 +74,7 @@ export async function POST(req: Request) {
   }: { messages: ChatMessage[]; book?: BookContext; memory?: unknown } = await req.json();
   // Hafıza kapalıysa istemci göndermez; o zaman araç da verilmez
   const memory = rawMemory === undefined ? null : sanitizeMemory(rawMemory);
-  const model = openai(process.env.OPENAI_MODEL || "gpt-6-luna");
+  const model = ai.model;
   const last = messages.length - 1;
 
   const withReferences = await Promise.all(
@@ -162,7 +155,7 @@ ${prompt}` : prompt;
       ...markTools,
       ...noteTools,
       ...(memory ? memoryTools(memory) : {}),
-      web_search: openai.tools.webSearch({ searchContextSize: "medium" }),
+      web_search: ai.webSearch(),
     },
     toolChoice:
       skillName === "test"
@@ -183,13 +176,14 @@ ${prompt}` : prompt;
       hasToolCall("markPages"),
       hasToolCall("writeNote"),
     ],
-    // Geçmiş mesajlar OpenAI'da saklanan kimlikle değil içerikle gönderilir; yarıda kalan
-    // ya da süresi dolan kayıtlar sonraki mesajı bozmasın
-    providerOptions: { openai: { store: false } },
+    // OpenAI'da geçmiş mesajlar saklanan kimlikle değil içerikle gönderilir (store: false);
+    // yarıda kalan ya da süresi dolan kayıtlar sonraki mesajı bozmasın
+    providerOptions: ai.providerOptions,
     abortSignal: req.signal,
   });
 
-  return result.toUIMessageStreamResponse({ sendSources: true });
+  // Hata metni yerine kod gider; istemci invalid_api_key görünce ayarları açar
+  return result.toUIMessageStreamResponse({ sendSources: true, onError: aiErrorCode });
 }
 
 /** Seçili metin veya skill varsa sayfa metni zaten mesajda; açık sayfa yalnızca serbest sorularda eklenir. */
@@ -228,7 +222,7 @@ Bu parçada soruyla ilgili her bilgiyi ayrıntısıyla, mümkünse metinden ayne
 /** Kısa belgeyi doğrudan, uzun belgeyi önce parça parça özetleyip gönderir. */
 async function buildSkillPrompt(
   skill: SkillRequest,
-  model: ReturnType<typeof openai>,
+  model: Ai["model"],
   signal: AbortSignal,
 ) {
   if (!skill.pages.length)

@@ -1,4 +1,4 @@
-import { openai } from "@ai-sdk/openai";
+import { aiErrorCode, getAi, missingKeyResponse } from "@/lib/ai-provider";
 import { generateText } from "ai";
 import type { ProfileRequest } from "@/lib/book-context";
 
@@ -15,12 +15,13 @@ Ana bölümler: <kısa liste>
 Kitabı tanıyorsan genel bilgini kullanabilirsin ama verilen metinle çelişme. Emin olmadığın bilgiyi yazma; künye boş veya anlamsızsa ilk sayfalardan çıkar.`;
 
 export async function POST(req: Request) {
-  if (!process.env.OPENAI_API_KEY) {
-    return Response.json({ error: "OPENAI_API_KEY tanımlı değil." }, { status: 500 });
-  }
+  const ai = getAi(req);
+  if (!ai) return missingKeyResponse();
   const b: ProfileRequest = await req.json();
+  try {
   const { text } = await generateText({
-    model: openai(process.env.OPENAI_MODEL || "gpt-6-luna"),
+    model: ai.model,
+    providerOptions: ai.providerOptions,
     system: SYSTEM,
     abortSignal: req.signal,
     prompt: [
@@ -33,4 +34,8 @@ export async function POST(req: Request) {
     ].join("\n"),
   });
   return Response.json({ profile: text.trim() });
+  } catch (err) {
+    const code = aiErrorCode(err);
+    return Response.json({ error: code }, { status: code === "invalid_api_key" ? 401 : 502 });
+  }
 }

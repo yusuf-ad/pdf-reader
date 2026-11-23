@@ -1,4 +1,4 @@
-import { openai } from "@ai-sdk/openai";
+import { aiErrorCode, getAi, missingKeyResponse } from "@/lib/ai-provider";
 import { generateText, Output } from "ai";
 import { z } from "zod";
 
@@ -19,12 +19,8 @@ const translationSchema = z.object({
 });
 
 export async function POST(req: Request) {
-  if (!process.env.OPENAI_API_KEY) {
-    return Response.json(
-      { error: "OPENAI_API_KEY tanımlı değil (.env.local dosyasını kontrol et)." },
-      { status: 500 },
-    );
-  }
+  const ai = getAi(req);
+  if (!ai) return missingKeyResponse();
 
   const parsed = requestSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -34,7 +30,8 @@ export async function POST(req: Request) {
 
   try {
     const { output } = await generateText({
-      model: openai(process.env.OPENAI_MODEL || "gpt-6-luna"),
+      model: ai.model,
+      providerOptions: ai.providerOptions,
       output: Output.object({ schema: translationSchema }),
       system:
         "Sen deneyimli bir çevirmen ve sözlüksün. Kullanıcı bir PDF okurken bir kelime ya da ifade seçiyor. " +
@@ -45,7 +42,9 @@ export async function POST(req: Request) {
 
     return Response.json(output);
   } catch (err) {
-    console.error(err);
+    const code = aiErrorCode(err);
+    if (code === "invalid_api_key") return Response.json({ error: code }, { status: 401 });
+    console.error(code, (err as { statusCode?: number })?.statusCode);
     const message = err instanceof Error ? err.message : "Bilinmeyen hata";
     return Response.json({ error: `Çeviri başarısız: ${message}` }, { status: 502 });
   }
