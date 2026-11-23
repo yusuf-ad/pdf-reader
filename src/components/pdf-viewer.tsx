@@ -10,7 +10,7 @@ import { useOcr } from "@/lib/ocr";
 import { PDF_OPTIONS } from "@/lib/pdfjs"; // worker ayarını da yapar
 import { AiCursor } from "./ai-marker";
 import AnnotationLayer from "./annotation-layer";
-import CropLayer, { type CropRegion } from "./crop-layer";
+import CropLayer, { type CropPart } from "./crop-layer";
 import HighlightLayer from "./highlight-layer";
 import OcrTextLayer from "./ocr-text-layer";
 
@@ -31,7 +31,7 @@ type Props = {
   /** Vurgulanan metni sohbete sor */
   onAskHighlight: (text: string, page: number) => void;
   /** Soru kırpma açıkken verilir */
-  onCrop?: (page: number, region: CropRegion) => void;
+  onCrop?: (parts: CropPart[]) => void;
 };
 
 type PageExtras = Pick<Props, "bookKey" | "tool" | "color" | "ocr" | "onAskHighlight" | "onCrop">;
@@ -233,6 +233,11 @@ function LazyPage({
             Metin tanınıyor…
           </span>
         )}
+        {ocr.status === "error" && (
+          <span className="pointer-events-none absolute top-2 right-2 z-20 bg-sheet/90 px-2 py-0.5 text-[11px] text-accent">
+            Metin tanınamadı
+          </span>
+        )}
         {visible && (
           <HighlightLayer
             book={annotation.bookKey}
@@ -255,7 +260,7 @@ function LazyPage({
         )}
         {visible && <AiCursor page={pageNumber} width={width} />}
         {visible && annotation.onCrop && (
-          <CropLayer page={pageNumber} width={width} height={frameHeight} onCrop={annotation.onCrop} />
+          <CropLayer page={pageNumber} onCrop={annotation.onCrop} />
         )}
       </div>
       <figcaption className="mt-2 text-center text-xs tabular-nums text-muted">

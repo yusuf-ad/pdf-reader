@@ -234,38 +234,60 @@ async function migrateTopics() {
   }
 }
 
-/**
- * Sayfanın bir bölgesini yüksek çözünürlükte PNG olarak çizer.
- * Bölge sayfaya oranla verilir (0–1); ekrandaki canvas yerine sayfa yeniden çizildiği için
- * yakınlaştırma düzeyinden bağımsız olarak net çıkar.
- */
-export async function cropPage(
-  pdf: import("pdfjs-dist").PDFDocumentProxy,
-  pageNumber: number,
-  region: { x: number; y: number; w: number; h: number },
-): Promise<{ image: Blob; sourceWidth: number }> {
-  const page = await pdf.getPage(pageNumber);
-  const natural = page.getViewport({ scale: 1 });
-  // Kırpılan parça en az ~1400px genişlikte olsun; çok büyük canvas'tan kaçın
-  const scale = Math.min(5, Math.max(2, 1400 / (region.w * natural.width)));
-  const viewport = page.getViewport({ scale });
-  const full = document.createElement("canvas");
-  full.width = Math.round(viewport.width);
-  full.height = Math.round(viewport.height);
-  await page.render({ canvas: full, viewport }).promise;
+type Region = { x: number; y: number; w: number; h: number };
 
-  const sx = Math.round(region.x * full.width);
-  const sy = Math.round(region.y * full.height);
-  const sw = Math.max(1, Math.round(region.w * full.width));
-  const sh = Math.max(1, Math.round(region.h * full.height));
+/**
+ * Sayfa(lar)ın bir bölgesini yüksek çözünürlükte PNG olarak çizer.
+ * Bölgeler sayfaya oranla verilir (0–1); ekrandaki canvas yerine sayfa yeniden çizildiği için
+ * yakınlaştırma düzeyinden bağımsız olarak net çıkar. Seçim birden fazla sayfaya taşıyorsa
+ * parçalar aynı ölçekte çizilip alt alta birleştirilir.
+ */
+export async function cropPages(
+  pdf: import("pdfjs-dist").PDFDocumentProxy,
+  parts: { page: number; region: Region }[],
+): Promise<{ image: Blob; sourceWidth: number }> {
+  const pages = await Promise.all(parts.map((p) => pdf.getPage(p.page)));
+  const naturals = pages.map((page) => page.getViewport({ scale: 1 }));
+  // En geniş parça en az ~1400px genişlikte olsun; çok büyük canvas'tan kaçın
+  const widest = Math.max(...parts.map((p, i) => p.region.w * naturals[i].width));
+  const scale = Math.min(5, Math.max(2, 1400 / widest));
+
+  const pieces: HTMLCanvasElement[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    const { region } = parts[i];
+    const viewport = pages[i].getViewport({ scale });
+    const full = document.createElement("canvas");
+    full.width = Math.round(viewport.width);
+    full.height = Math.round(viewport.height);
+    await pages[i].render({ canvas: full, viewport }).promise;
+
+    const sx = Math.round(region.x * full.width);
+    const sy = Math.round(region.y * full.height);
+    const sw = Math.max(1, Math.round(region.w * full.width));
+    const sh = Math.max(1, Math.round(region.h * full.height));
+    const piece = document.createElement("canvas");
+    piece.width = sw;
+    piece.height = sh;
+    piece.getContext("2d")!.drawImage(full, sx, sy, sw, sh, 0, 0, sw, sh);
+    full.width = full.height = 0; // belleği hemen bırak
+    pieces.push(piece);
+  }
+
   const out = document.createElement("canvas");
-  out.width = sw;
-  out.height = sh;
-  out.getContext("2d")!.drawImage(full, sx, sy, sw, sh, 0, 0, sw, sh);
-  full.width = full.height = 0; // belleği hemen bırak
+  out.width = Math.max(...pieces.map((c) => c.width));
+  out.height = pieces.reduce((sum, c) => sum + c.height, 0);
+  const ctx = out.getContext("2d")!;
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, out.width, out.height);
+  let y = 0;
+  for (const piece of pieces) {
+    ctx.drawImage(piece, Math.round((out.width - piece.width) / 2), y);
+    y += piece.height;
+    piece.width = piece.height = 0;
+  }
 
   const image = await new Promise<Blob>((resolve, reject) =>
     out.toBlob((b) => (b ? resolve(b) : reject(new Error("Görüntü oluşturulamadı."))), "image/png"),
   );
-  return { image, sourceWidth: +(region.w * natural.width).toFixed(1) };
+  return { image, sourceWidth: +widest.toFixed(1) };
 }

@@ -11,7 +11,8 @@ import {
   useRef,
   useState,
 } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   chapterAt,
   getBookInfo,
@@ -1068,7 +1069,9 @@ const Message = memo(function Message({
             ref={bodyRef}
             className="chat-md font-serif text-[17px] leading-[1.75]"
           >
-            <ReactMarkdown>{body}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={MD_PLUGINS} components={MD_COMPONENTS}>
+              {body}
+            </ReactMarkdown>
           </div>
         )}
         {/* Generative UI: model createQuiz aracını çağırdıysa test kartı, proposeWords çağırdıysa kelime önizlemesi çizilir */}
@@ -1316,6 +1319,16 @@ const Message = memo(function Message({
     </div>
   );
 });
+
+// GFM: tablolar, üstü çizili, görev listeleri. Tablolar dar panelde taşmasın diye kaydırılabilir kutuya sarılır
+const MD_PLUGINS = [remarkGfm];
+const MD_COMPONENTS: Components = {
+  table: ({ node: _node, ...props }) => (
+    <div className="chat-md-table">
+      <table {...props} />
+    </div>
+  ),
+};
 
 /** Markdown işaretlerini (##, **, `, [](), > …) temizleyip okunur düz metin yapar. */
 function plainText(markdown: string) {

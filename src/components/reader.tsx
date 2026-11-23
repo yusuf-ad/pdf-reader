@@ -41,8 +41,9 @@ import type { Reference } from "@/lib/chat";
 import { deleteBookOcr, renameBookOcr, setOcrEnabled, useOcrEnabled } from "@/lib/ocr";
 import type { MarkInput } from "@/lib/page-marks";
 import { getPageText, usePdfSearch } from "@/lib/pdf-search";
-import { cropPage, renameBookQuestions, type NewQuestion } from "@/lib/questions";
+import { cropPages, renameBookQuestions, type NewQuestion } from "@/lib/questions";
 import { loadProgress, saveProgress, toggleBookmark, useBookmarks } from "@/lib/reading-state";
+import { addSelectionNote } from "@/lib/chat-notes";
 import { extractSelection, selectedPdfText, selectionHighlights } from "@/lib/selection";
 import { deleteBook as deleteBookData, insertBookPage, requestPersistence } from "@/lib/storage";
 import { makeTextRenderer } from "@/lib/text-highlight";
@@ -51,7 +52,7 @@ import { setStickyOpen, useStickyOpen } from "@/lib/sticky-notes";
 import { useSavedWords } from "@/lib/use-saved-words";
 import { AiMarkerStatus, useAiMarker } from "./ai-marker";
 import ChatModal from "./chat-modal";
-import type { CropRegion } from "./crop-layer";
+import type { CropPart } from "./crop-layer";
 import LeftPanel, { type LeftTab } from "./left-panel";
 import Library from "./library";
 import { QuestionDialog } from "./questions";
@@ -613,6 +614,18 @@ export default function Reader({ pane }: { pane: PaneProps }) {
     [key, closePopover],
   );
 
+  /** Seçili metni alıntı olarak notlara ekler. */
+  const noteSelection = useCallback(() => {
+    const selection = window.getSelection();
+    const picked = selection && selectedPdfText(selection);
+    if (!key || !picked) return;
+    addSelectionNote(key, selection!.toString() || picked.text, picked.page);
+    selection!.removeAllRanges();
+    lastSelectionRef.current = null;
+    closePopover();
+    setAskChip(null);
+  }, [key, closePopover]);
+
   /**
    * Kalem çizgilerini, yazıları ve vurguları PDF'e yazıp kaydeder. İlk kayıtta (ya da farklı
    * kaydette) yer sorulur, sonra hep aynı dosyanın üzerine yazılır.
@@ -714,12 +727,12 @@ export default function Reader({ pane }: { pane: PaneProps }) {
   }, [closePopover]);
 
   const handleCrop = useCallback(
-    async (page: number, region: CropRegion) => {
+    async (parts: CropPart[]) => {
       setCropping(false);
       if (!pdf || !file) return;
       try {
-        const { image, sourceWidth } = await cropPage(pdf, page, region);
-        setQuestionDraft({ image, sourceWidth, book: key, bookName: file.name, page });
+        const { image, sourceWidth } = await cropPages(pdf, parts);
+        setQuestionDraft({ image, sourceWidth, book: key, bookName: file.name, page: parts[0].page });
       } catch (err) {
         alert(`Soru kırpılamadı: ${(err as Error).message}`);
       }
@@ -1268,6 +1281,10 @@ export default function Reader({ pane }: { pane: PaneProps }) {
           <button onClick={openChat} className="flex items-center gap-2 px-3 py-1.5 hover:text-ink">
             Bu bölümü sor
             <kbd className="font-mono text-[11px] text-muted">Ctrl K</kbd>
+          </button>
+          <span className="h-5 w-px bg-rule" />
+          <button onClick={noteSelection} className="px-3 py-1.5 hover:text-ink">
+            Nota ekle
           </button>
           <span className="h-5 w-px bg-rule" />
           <HighlightSwatches current={highlightColor} onPick={highlightSelection} />

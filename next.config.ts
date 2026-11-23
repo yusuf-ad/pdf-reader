@@ -22,6 +22,8 @@ const nextConfig: NextConfig = {
   turbopack: {
     rules: {
       "*.css": {
+        // Next'in kendi ürettiği CSS'e (ör. next/font) dokunma; yalnızca projenin dosyaları
+        condition: { not: "foreign" },
         loaders: ["@tailwindcss/turbopack"],
         as: "*.css",
       },

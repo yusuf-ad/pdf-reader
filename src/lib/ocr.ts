@@ -14,6 +14,8 @@ import { bookKey, set, useStored } from "./storage";
 const LANGS = "eng";
 // Bundan az harf içeren sayfa "taranmış" sayılır
 const MIN_TEXT_CHARS = 20;
+// Bundan çok harf varsa görüntü olsa da metinli sayfa sayılır
+const FULL_TEXT_CHARS = 200;
 // Tesseract ~300 DPI sever; sayfa bu genişlikte çizilip okunur
 const OCR_WIDTH = 1800;
 const MIN_CONFIDENCE = 30;
@@ -170,14 +172,21 @@ function enqueue(page: PDFPageProxy, key: string, signal: AbortSignal) {
   });
 }
 
+// pdf.js OPS: paintImageMaskXObject, paintImageXObject, paintInlineImageXObject(Group), paintImageXObjectRepeat
+const IMAGE_OPS = new Set([83, 85, 86, 87, 88]);
+
 async function hasText(page: PDFPageProxy) {
   const content = await page.getTextContent();
   let chars = 0;
   for (const item of content.items) {
     if ("str" in item) chars += item.str.replace(/\s/g, "").length;
-    if (chars >= MIN_TEXT_CHARS) return true;
+    if (chars >= FULL_TEXT_CHARS) return true;
   }
-  return false;
+  if (chars < MIN_TEXT_CHARS) return false;
+  // Az metin + sayfa görüntüsü: tarayıcı uygulamalarının filigranı ("Scanned with …") ya da
+  // yalnızca başlık/sayfa numarası metin olarak eklenmiş taranmış sayfa
+  const ops = await page.getOperatorList();
+  return !ops.fnArray.some((fn) => IMAGE_OPS.has(fn));
 }
 
 /** Sayfa taranmışsa (metni yoksa) OCR ile tanır; sonucu önbellekten de getirebilir. */
