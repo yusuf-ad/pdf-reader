@@ -4,6 +4,8 @@
  */
 
 import type { PDFDocumentProxy } from "pdfjs-dist";
+import { aiHeaders, hasAiKey } from "./ai-settings";
+import { clientAiErrorCode } from "./chat";
 
 /** Her sohbet isteğiyle sunucuya giden kitap bilgisi. */
 export type BookContext = {
@@ -119,9 +121,11 @@ export function getBookProfile(
   readPage: (page: number) => Promise<string>,
   /** Profilin tarayıcıda saklandığı yer */
   stored: { get: () => string | undefined; set: (profile: string) => void },
+  onError?: (code: string) => void,
 ): Promise<string | null> {
   const saved = stored.get();
   if (saved) return Promise.resolve(saved);
+  if (!hasAiKey()) return Promise.resolve(null);
   let req = profileRequests.get(book);
   if (!req) {
     req = (async () => {
@@ -139,19 +143,21 @@ export function getBookProfile(
         outline: formatOutline(info.outline),
         sample: sample.join("\n\n"),
       };
+      if (!hasAiKey()) return null;
       const res = await fetch("/api/book-profile", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...aiHeaders() },
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(await res.text());
       const { profile } = (await res.json()) as { profile: string };
       stored.set(profile);
       return profile;
-    })().catch(() => {
-      profileRequests.delete(book); // sonraki soruda yeniden denensin
+    })().catch((error: unknown) => {
+      const code = clientAiErrorCode(error);
+      if (code) onError?.(code);
       return null;
-    });
+    }).finally(() => profileRequests.delete(book)); // sonraki soruda yeniden denensin
     profileRequests.set(book, req);
   }
   return req;

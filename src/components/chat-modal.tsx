@@ -1,7 +1,7 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import type { FileUIPart } from "ai";
+import { DefaultChatTransport, type FileUIPart } from "ai";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import {
   memo,
@@ -32,6 +32,7 @@ import {
 } from "@/lib/chat-history";
 import { addChatNote, removeChatNote, useChatNotes } from "@/lib/chat-notes";
 import {
+  clientAiErrorCode,
   isWebSearchPart,
   splitSuggestions,
   type ChatMessage,
@@ -75,6 +76,15 @@ import type { MarkInput } from "@/lib/page-marks";
 import { MarkCard } from "./ai-marker";
 import { NoteCard } from "./note-writer";
 import WordProposal from "./word-proposal";
+import { aiHeaders, hasAiKey, openAiSettings, useAiSettings } from "@/lib/ai-settings";
+
+const AI_COPY = {
+  addKey: "AI özellikleri için API key ekle",
+  settings: "API key ekle / düzenle",
+  invalidKey: "API key eksik ya da geçersiz",
+  rateLimited: "Sağlayıcı limitine takıldın, biraz sonra tekrar dene.",
+  failed: "Cevap alınamadı, tekrar dene.",
+};
 
 const MAX_IMAGES = 4;
 // Büyük ekran görüntüleri bu boyuta küçültülür (istek küçük kalsın, yazı yine okunur)
@@ -193,7 +203,16 @@ function ChatWindow({
   onGoTo,
   onMarkQuestions,
 }: Props & { sessionId: string; onOpenSession: (id: string) => void }) {
+  const settings = useAiSettings();
   const [profile, setProfile] = useState<string | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [transport] = useState(() => new DefaultChatTransport<ChatMessage>({
+    api: "/api/chat",
+    headers: () => {
+      if (!hasAiKey()) throw new Error("missing_api_key");
+      return aiHeaders();
+    },
+  }));
 
   // Sohbet ilk açıldığında kitabı tanı (profil bir kez çıkarılıp saklanır)
   useEffect(() => {
@@ -205,13 +224,19 @@ function ChatWindow({
       title,
       (p) => getPageText(pdf, p, book),
       profileStore(book),
+      (code) => {
+        if (active) setProfileError(code);
+      },
     ).then((p) => {
-      if (active) setProfile(p);
+      if (active) {
+        setProfile(p);
+        if (p) setProfileError(null);
+      }
     });
     return () => {
       active = false;
     };
-  }, [open, pdf, book, title]);
+  }, [open, pdf, book, title, settings]);
 
   // Açık sayfa chip'i: kaldırılırsa yalnızca o sayfa için kapalı kalır, sayfa değişince ya da gönderince geri gelir
   const [pageOffAt, setPageOffAt] = useState<number | null>(null);
@@ -255,9 +280,10 @@ function ChatWindow({
     };
   };
 
-  const { messages, sendMessage, status, stop, error, regenerate } =
+  const { messages, sendMessage, status, stop, error, regenerate, clearError } =
     useChat<ChatMessage>({
       id: chatId,
+      transport,
       // Kaydedilmiş sohbet kaldığı yerden devam eder (bileşen sohbet değişince yeniden kurulur)
       messages: loadSession(chatId, sessionId),
       // Akış sırasında arayüzü her parçada değil en fazla 50 ms'de bir güncelle
@@ -265,6 +291,11 @@ function ChatWindow({
       // Modelin hafıza değişiklikleri cevap bitince yerel hafızaya yazılır
       onFinish: ({ message }) => applyChanges(memoryChangesOf(message)),
     });
+  useEffect(() => {
+    clearError();
+  }, [settings, clearError]);
+  const errorCode = clientAiErrorCode(error ?? profileError);
+  const needsKey = !settings?.key || errorCode === "missing_api_key" || errorCode === "invalid_api_key";
 
   // Cevap bitince (akış sırasında her parçada değil) sohbeti kaydet
   const savedRef = useRef(messages);
@@ -340,6 +371,8 @@ function ChatWindow({
 
   /** Mesajı kitap bilgisiyle birlikte gönderir. */
   const send = async (message: Parameters<typeof sendMessage>[0]) => {
+    if (!hasAiKey()) return openAiSettings();
+    setProfileError(null);
     setPreparing(true);
     let body: object = memoryBody();
     try {
@@ -355,6 +388,8 @@ function ChatWindow({
   // Mesajlar memo'lu: düzenle / yeniden sor her çizimde değişmesin
   const resendRef = useRef<(id: string, text?: string) => void>(() => {});
   const resendNow = async (id: string, text?: string) => {
+    if (!hasAiKey()) return openAiSettings();
+    setProfileError(null);
     const asked = messages.find((m) => m.id === id);
     if (!asked) return;
     stickRef.current = true;
@@ -540,6 +575,7 @@ function ChatWindow({
       if (messages.length) newChat();
       return;
     }
+    if (!hasAiKey()) return openAiSettings();
     stickRef.current = true;
     const skill = parseSkill(text, pdf?.numPages ?? 0, currentPage);
     if (skill) {
@@ -823,18 +859,20 @@ function ChatWindow({
               </p>
             )}
             {notice && <p className="text-sm text-accent">{notice}</p>}
-            {error && (
+            {!needsKey && (error || profileError) && (
               <div className="text-sm text-accent">
-                Cevap alınamadı: {error.message}{" "}
+                {errorCode === "rate_limited" ? AI_COPY.rateLimited : AI_COPY.failed}{" "}
                 <button
-                  onClick={async () =>
-                    regenerate({
+                  onClick={async () => {
+                    if (!hasAiKey()) return openAiSettings();
+                    setProfileError(null);
+                    await regenerate({
                       body: {
                         ...memoryBody(),
                         ...(await bookBody().catch(() => ({}))),
                       },
-                    })
-                  }
+                    });
+                  }}
                   className="underline underline-offset-2"
                 >
                   Tekrar dene
@@ -850,6 +888,14 @@ function ChatWindow({
         className={`border-t border-rule px-6 pt-3 pb-3 ${panel ? "hidden" : ""}`}
       >
         <div className="mx-auto max-w-[70ch]">
+          {needsKey && (
+            <div className="mb-3 border border-rule bg-paper px-3 py-2 text-sm text-muted">
+              <p>{settings?.key ? AI_COPY.invalidKey : AI_COPY.addKey}</p>
+              <button onClick={openAiSettings} className="mt-2 border border-rule px-3 py-1 text-ink hover:border-ink">
+                {AI_COPY.settings}
+              </button>
+            </div>
+          )}
           {pdf && (
             <div className="mb-2 flex items-baseline gap-3 text-xs">
               {!pageRange && (

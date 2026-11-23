@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { hasAiKey, openAiSettings, useAiSettings } from "@/lib/ai-settings";
 import {
   addQuestion,
   createFolder,
@@ -16,6 +17,11 @@ import {
   type NewQuestion,
   type Question,
 } from "@/lib/questions";
+
+const AI_COPY = {
+  addKey: "AI özellikleri için API key ekle",
+  settings: "API key ekle / düzenle",
+};
 
 /** PDF'ten kırpılan görüntüler sayfa gibi temaya uyar; dışarıdan yapıştırılanlar olduğu gibi kalır. */
 const imageFilter = (page: number | null) => (page ? "[filter:var(--page-filter)]" : "");
@@ -585,6 +591,7 @@ function QuestionViewer({
   onClose: () => void;
 }) {
   const [note, setNote] = useState(q.note);
+  const settings = useAiSettings();
 
   // Kapanırken değişen not kaydedilir
   const close = () => {
@@ -641,12 +648,13 @@ function QuestionViewer({
         )}
         <button
           onClick={() => {
+            if (!hasAiKey()) return openAiSettings();
             if (note.trim() !== q.note) updateQuestion(q.id, { note: note.trim() });
             onAsk();
           }}
           className="text-muted hover:text-ink"
         >
-          Sohbete sor
+          {settings?.key ? "Sohbete sor" : AI_COPY.settings}
         </button>
         <button
           onClick={() => updateQuestion(q.id, { status: q.status === "solved" ? "open" : "solved" })}
@@ -659,6 +667,7 @@ function QuestionViewer({
           {q.status === "solved" ? "Tekrar çözülmedi yap" : "Çözdüm ✓"}
         </button>
       </div>
+      {!settings?.key && <p className="px-6 pb-3 text-xs text-muted">{AI_COPY.addKey}</p>}
     </Modal>
   );
 }

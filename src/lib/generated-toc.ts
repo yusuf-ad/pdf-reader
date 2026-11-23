@@ -7,6 +7,7 @@
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { OutlineItem } from "./book-context";
 import { bookKey, get, set, useStored } from "./storage";
+import { aiHeaders, hasAiKey } from "./ai-settings";
 
 /** Basılı içindekiler genelde ilk sayfalarda */
 const SCAN_PAGES = 30;
@@ -61,6 +62,7 @@ export async function generateToc(
   readPage: (page: number) => Promise<string>,
   signal?: AbortSignal,
 ): Promise<OutlineItem[] | null> {
+  if (!hasAiKey()) return null;
   const pageText = new Map<number, string>();
   const read = async (p: number) => {
     if (!pageText.has(p)) pageText.set(p, normalize(await readPage(p).catch(() => "")));
@@ -74,9 +76,10 @@ export async function generateToc(
   }
   if (!sample.length) throw new Error("İlk sayfalarda okunabilir metin yok (taranmışsa önce metin tanımayı aç).");
 
+  if (!hasAiKey()) return null;
   const res = await fetch("/api/toc", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...aiHeaders() },
     body: JSON.stringify({ numPages: pdf.numPages, sample: sample.join("\n\n") }),
     signal,
   });
