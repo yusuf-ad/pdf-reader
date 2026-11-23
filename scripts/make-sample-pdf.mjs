@@ -86,7 +86,7 @@ section("Add your own Gemini key", "Click \"Add AI key\" in the toolbar (or the 
 text("https://aistudio.google.com/apikey", { font: sans, size: 13, color: accent, gap: 22 });
 section("Ask about a selection", "Select a passage and press Ctrl + K to open the chat with that context. Try: 'Why did Mira move only one pot?' You can also double-click a word to request its meaning in context and a sentence translation.");
 section("Ask about a page", "Open chat with Ctrl + K and ask about the current page, or specify the page number in your prompt. Try: 'Summarize page 1 in three points.' Check the response against the PDF; AI can make mistakes.");
-section("Keep control of your key", "The key is stored in this browser. For an AI request, the app sends it through its API to your chosen provider with the requested document context. You can change or delete the key in AI settings. Reading, highlights, notes and export work without a key.");
+section("Keep control of your key", "The key is stored in this browser. For an AI request, the app sends it through its API to your chosen provider with the requested document context. You can change or delete it any time from \"AI API key\" in the toolbar or library. Reading, highlights, notes and export work without a key.");
 
 start("04 / Check your understanding", "Turn pages into practice.", "A short quiz can show what you understood and what to reread.");
 section("Request a quiz in chat", "Add your AI key, open chat, then ask for a multiple-choice quiz and name the pages. For this guide, try: 'Create a 3-question quiz from page 1 about Mira's experiment.' For your own textbook, try: 'Make a 5-question quiz from pages 12-15.'");
