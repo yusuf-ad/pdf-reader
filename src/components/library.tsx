@@ -8,6 +8,9 @@ import { getPaperStyles } from "@/lib/paper-styles";
 import { addWelcomeBook, type Book } from "@/lib/file-store";
 import { loadProgress } from "@/lib/reading-state";
 import { openOnboarding } from "./onboarding";
+import AiSettingsDialog from "./ai-settings-dialog";
+import { KeyIcon } from "./icons";
+import { openAiSettings, useAiSettings } from "@/lib/ai-settings";
 
 const DATA_NOTICE_DISMISSED_KEY = "pdf-reader:data-notice-dismissed";
 const dataNoticeListeners = new Set<() => void>();
@@ -141,7 +144,7 @@ export default function Library({
   if (books.length === 0) {
     return (
       <div className="mx-auto flex min-h-full max-w-md flex-col justify-center px-8 py-8">
-        <div className="mb-4 self-end"><LanguageSwitcher /></div>
+        <div className="mb-4 self-end"><LibraryControls /></div>
         <DataLocalityNotice />
         <h1 className="font-serif text-3xl leading-tight">{t("libraryEmptyTitle")}</h1>
         <p className="mt-3 leading-relaxed text-muted">
@@ -185,11 +188,11 @@ export default function Library({
         <div className="mr-auto">
           <h1 className="font-serif text-3xl">{t("libraryTitle")}</h1>
           <p className="mt-1 text-sm text-muted">
-            {t("libraryBookCount", { n: books.length })}
+            {books.length === 1 ? t("libraryBookCountOne") : t("libraryBookCount", { n: books.length })}
             {adding > 0 && t("libraryAdding", { n: adding })}
           </p>
         </div>
-        <LanguageSwitcher />
+        <LibraryControls />
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -473,6 +476,33 @@ function relativeTime(time: number) {
 }
 
 /** Shared by the library and the shortcuts dialog. */
+/** Kitaplık başlığındaki ayarlar: AI anahtarı ve dil. Okuyucu açık değilken de anahtara ulaşılsın. */
+function LibraryControls() {
+  const t = useT("library");
+  const ai = useAiSettings();
+  return (
+    <div className="flex shrink-0 items-center gap-3">
+      {ai?.key ? (
+        <button onClick={openAiSettings} className="flex items-center gap-1.5 text-sm text-muted hover:text-ink">
+          <KeyIcon />
+          {t("toolbarAiSettings")}
+        </button>
+      ) : (
+        <button
+          onClick={openAiSettings}
+          title={t("toolbarAiKey")}
+          className="flex items-center gap-1.5 border border-accent px-2 py-1 text-sm text-accent hover:bg-accent hover:text-sheet"
+        >
+          <KeyIcon />
+          {t("toolbarAddKey")}
+        </button>
+      )}
+      <LanguageSwitcher />
+      <AiSettingsDialog />
+    </div>
+  );
+}
+
 export function LanguageSwitcher() {
   const lang = useLang();
   const t = useT("library");
