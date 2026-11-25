@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/lib/i18n";
 import { useEffect, useRef, useState } from "react";
 import {
   HIGHLIGHT_COLORS,
@@ -27,6 +28,7 @@ type Props = {
  * tıklanınca renk değiştirme, sorma ve silme menüsü açılır.
  */
 export default function HighlightLayer({ book, page, width: w, height: h, tool, onAsk }: Props) {
+  const t = useT("reader");
   const items = usePageAnnotations(book, page);
   const highlights = items.filter((a): a is Highlight => a.type === "highlight");
   const markers = items.filter((a) => a.type === "ink" && a.marker);
@@ -134,8 +136,8 @@ export default function HighlightLayer({ book, page, width: w, height: h, tool, 
             <button
               key={color}
               onClick={() => updateHighlight(book, page, active.id, { color })}
-              aria-label={label}
-              title={label}
+              aria-label={t(label)}
+              title={t(label)}
               style={{ background: color }}
               className={`h-4 w-4 rounded-full ${
                 active.color === color ? "ring-1 ring-ink ring-offset-1 ring-offset-sheet" : "opacity-70 hover:opacity-100"
@@ -150,7 +152,7 @@ export default function HighlightLayer({ book, page, width: w, height: h, tool, 
             }}
             className="px-1 text-muted hover:text-ink"
           >
-            Sor
+            {t("highlightAsk")}
           </button>
           <button
             onClick={() => {
@@ -159,7 +161,7 @@ export default function HighlightLayer({ book, page, width: w, height: h, tool, 
             }}
             className="px-1 text-muted hover:text-ink"
           >
-            Kopyala
+            {t("highlightCopy")}
           </button>
           <button
             onClick={() => {
@@ -168,7 +170,7 @@ export default function HighlightLayer({ book, page, width: w, height: h, tool, 
             }}
             className="px-1 text-muted hover:text-accent"
           >
-            Sil
+            {t("highlightDelete")}
           </button>
         </div>
       )}

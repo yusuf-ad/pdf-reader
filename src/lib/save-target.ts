@@ -5,6 +5,7 @@
 // İzin isteme ve kayıt penceresi yalnızca kullanıcı bir tuşa/düğmeye bastıktan hemen sonra
 // açılabilir; bu yüzden hedef, PDF hazırlanmadan önce belirlenir.
 import { getSaveHandle, setSaveHandle } from "./file-store";
+import { translate } from "./i18n";
 
 type Permissioned = FileSystemFileHandle & {
   queryPermission?: (o: { mode: "readwrite" }) => Promise<PermissionState>;
@@ -34,7 +35,7 @@ async function pick(name: string): Promise<SaveTarget> {
   try {
     const handle = await show({
       suggestedName: name,
-      types: [{ description: "PDF", accept: { "application/pdf": [".pdf"] } }],
+      types: [{ description: translate("library", "saveTargetPdf"), accept: { "application/pdf": [".pdf"] } }],
     });
     fresh.add(handle);
     return handle;

@@ -1,4 +1,4 @@
-import { openai } from "@ai-sdk/openai";
+import { aiErrorCode, getAi, missingKeyResponse } from "@/lib/ai-provider";
 import { generateText, Output } from "ai";
 import { z } from "zod";
 
@@ -35,15 +35,15 @@ Kitabın basılı içindekiler (Contents / Table of Contents / İçindekiler) li
 - Basılı içindekiler yoksa found=false, entries boş olsun.`;
 
 export async function POST(req: Request) {
-  if (!process.env.OPENAI_API_KEY) {
-    return Response.json({ error: "OPENAI_API_KEY tanımlı değil." }, { status: 500 });
-  }
+  const ai = getAi(req);
+  if (!ai) return missingKeyResponse();
   const parsed = requestSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Geçersiz istek." }, { status: 400 });
 
   try {
     const { output } = await generateText({
-      model: openai(process.env.OPENAI_MODEL || "gpt-6-luna"),
+      model: ai.model,
+      providerOptions: ai.providerOptions,
       output: Output.object({ schema: tocSchema }),
       system: SYSTEM,
       prompt: parsed.data.sample,
@@ -51,8 +51,9 @@ export async function POST(req: Request) {
     });
     return Response.json(output);
   } catch (err) {
-    console.error(err);
-    const message = err instanceof Error ? err.message : "Bilinmeyen hata";
-    return Response.json({ error: `İçindekiler çıkarılamadı: ${message}` }, { status: 502 });
+    const code = aiErrorCode(err);
+    if (code === "invalid_api_key") return Response.json({ error: code }, { status: 401 });
+    console.error(code, (err as { statusCode?: number })?.statusCode);
+    return Response.json({ error: code }, { status: code === "rate_limited" ? 429 : 502 });
   }
 }

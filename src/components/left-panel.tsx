@@ -1,5 +1,7 @@
 "use client";
 
+import { useT } from "@/lib/i18n";
+
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { useEffect, useState, type RefObject } from "react";
 import { removeAnnotations, useBookAnnotations, type Highlight } from "@/lib/annotations";
@@ -7,6 +9,8 @@ import { generateToc, useGeneratedToc } from "@/lib/generated-toc";
 import { getPageText } from "@/lib/pdf-search";
 import type { SearchHit } from "@/lib/pdf-search";
 import { QuestionsTab } from "./questions";
+import { hasAiKey, openAiSettings, useAiSettings } from "@/lib/ai-settings";
+import { clientAiErrorCode } from "@/lib/chat";
 
 export type LeftTab = "contents" | "bookmarks" | "highlights" | "questions" | "search";
 
@@ -41,15 +45,16 @@ type Props = {
   onAskImage: (image: Blob) => void;
 };
 
-const TABS: [LeftTab, string][] = [
-  ["contents", "İçindekiler"],
-  ["bookmarks", "Yer imleri"],
-  ["highlights", "Vurgular"],
-  ["questions", "Sorular"],
-  ["search", "Ara"],
-];
+const TABS = [
+  ["contents", "leftContents"],
+  ["bookmarks", "leftBookmarks"],
+  ["highlights", "leftHighlights"],
+  ["questions", "leftQuestions"],
+  ["search", "leftSearch"],
+] as const satisfies readonly [LeftTab, string][];
 
 export default function LeftPanel(props: Props) {
+  const t = useT("library");
   const { tab, onTabChange } = props;
   return (
     <aside className="flex h-full min-h-0 flex-col border-r border-rule bg-sheet">
@@ -63,7 +68,7 @@ export default function LeftPanel(props: Props) {
               tab === id ? "border-ink text-ink" : "border-transparent text-muted hover:text-ink"
             }`}
           >
-            {label}
+            {t(label)}
           </button>
         ))}
       </nav>
@@ -109,6 +114,7 @@ function Contents({
   book: string | null;
   onGoTo: (page: number) => void;
 }) {
+  const t = useT("library");
   const [outline, setOutline] = useState<{ pdf: PDFDocumentProxy; items: OutlineEntry[] } | null>(null);
 
   useEffect(() => {
@@ -122,7 +128,7 @@ function Contents({
     };
   }, [pdf]);
 
-  if (!pdf || outline?.pdf !== pdf) return <Empty>Yükleniyor…</Empty>;
+  if (!pdf || outline?.pdf !== pdf) return <Empty>{t("leftLoading")}</Empty>;
   if (!outline.items.length) return <GeneratedContents pdf={pdf} book={book} onGoTo={onGoTo} />;
 
   return (
@@ -160,6 +166,9 @@ function GeneratedContents({
   book: string | null;
   onGoTo: (page: number) => void;
 }) {
+  const t = useT("library");
+  const settings = useAiSettings();
+  const [requestSettings, setRequestSettings] = useState(settings);
   const items = useGeneratedToc(book);
   const [state, setState] = useState<{ status: "idle" | "loading" | "missing" | "error"; error?: string }>({
     status: "idle",
@@ -167,6 +176,8 @@ function GeneratedContents({
 
   const generate = async () => {
     if (!book) return;
+    if (!hasAiKey()) return openAiSettings();
+    setRequestSettings(settings);
     setState({ status: "loading" });
     try {
       const result = await generateToc(pdf, book, (p) => getPageText(pdf, p, book));
@@ -177,6 +188,21 @@ function GeneratedContents({
   };
 
   const loading = state.status === "loading";
+  const code = requestSettings === settings ? clientAiErrorCode(state.error) : null;
+  const needsKey = !settings?.key || code === "missing_api_key" || code === "invalid_api_key";
+  const keyCta = (
+    <div className="mt-3 text-xs text-muted">
+      <p>{settings?.key ? t("contentsInvalidKey") : t("contentsAddKey")}</p>
+      <button onClick={openAiSettings} className="mt-2 border border-rule px-3 py-1.5 text-ink hover:border-ink">
+        {t("contentsSettings")}
+      </button>
+    </div>
+  );
+  const errorNotice = !needsKey && requestSettings === settings && state.status === "error" && (
+    <p className="mt-3 text-xs text-accent">
+      {code === "rate_limited" ? t("contentsRateLimited") : code === "ai_error" ? t("contentsFailed") : state.error}
+    </p>
+  );
 
   if (items && !loading) {
     return (
@@ -199,40 +225,42 @@ function GeneratedContents({
           ))}
         </ul>
         <p className="border-t border-rule px-5 py-3 text-xs leading-relaxed text-muted">
-          Kitabın basılı içindekiler sayfasından otomatik çıkarıldı; sayfalar birkaç sayfa kayabilir.{" "}
-          <button onClick={generate} className="underline underline-offset-2 hover:text-ink">
-            Yeniden oluştur
+          {t("contentsSource")}{" "}
+          <button onClick={needsKey ? openAiSettings : generate} className="underline underline-offset-2 hover:text-ink">
+            {t("contentsRegenerate")}
           </button>
         </p>
+        {needsKey && <div className="px-5 pb-3">{keyCta}</div>}
+        {errorNotice && <div className="px-5 pb-3">{errorNotice}</div>}
       </div>
     );
   }
 
   return (
     <div className="px-5 py-6 text-sm text-muted">
-      <p>Bu PDF&apos;te içindekiler bilgisi yok.</p>
+      <p>{t("contentsMissing")}</p>
       <p className="mt-2 text-xs leading-relaxed">
-        Kitabın basılı içindekiler sayfası varsa yapay zekayla okunup buraya tıklanabilir liste olarak
-        eklenebilir. Kitap başına bir kez yapılır.
+        {t("contentsExplain")}
       </p>
-      <button
+      {needsKey ? keyCta : <button
         onClick={generate}
         disabled={loading || !book}
         className="mt-4 border border-rule px-3 py-1.5 text-ink transition-colors hover:border-ink disabled:animate-pulse disabled:hover:border-rule"
       >
-        {loading ? "İçindekiler çıkarılıyor…" : "İçindekileri oluştur"}
-      </button>
+        {loading ? t("contentsGenerating") : t("contentsGenerate")}
+      </button>}
       {state.status === "missing" && (
         <p className="mt-3 text-xs text-accent">
-          İlk sayfalarda basılı bir içindekiler listesi bulunamadı.
+          {t("contentsNoPrintedList")}
         </p>
       )}
-      {state.status === "error" && <p className="mt-3 text-xs text-accent">{state.error}</p>}
+      {errorNotice}
     </div>
   );
 }
 
 function Bookmarks({ bookmarks, currentPage, onGoTo, onToggleBookmark }: Props) {
+  const t = useT("library");
   const marked = bookmarks.includes(currentPage);
   return (
     <div className="text-sm">
@@ -240,25 +268,25 @@ function Bookmarks({ bookmarks, currentPage, onGoTo, onToggleBookmark }: Props) 
         onClick={() => onToggleBookmark(currentPage)}
         className="w-full border-b border-rule px-5 py-3 text-left text-muted hover:text-ink"
       >
-        {marked ? "Bu sayfayı yer imlerinden çıkar" : "Bu sayfayı yer imlerine ekle"}
-        <span className="ml-1 tabular-nums">(s. {currentPage})</span>
+        {marked ? t("bookmarksRemovePage") : t("bookmarksAddPage")}
+        <span className="ml-1 tabular-nums">({t("leftPageShort", { page: currentPage })})</span>
         <span className="ml-2 font-mono text-xs">B</span>
       </button>
       {bookmarks.length === 0 ? (
-        <Empty>Henüz yer imi yok.</Empty>
+        <Empty>{t("bookmarksEmpty")}</Empty>
       ) : (
         <ul className="py-2">
           {bookmarks.map((page) => (
             <li key={page} className="group flex items-center hover:bg-ink/5">
               <button onClick={() => onGoTo(page)} className="flex-1 px-5 py-2 text-left">
-                <span className="font-serif text-[15px]">Sayfa {page}</span>
-                {page === currentPage && <span className="ml-2 text-xs text-muted">buradasın</span>}
+                <span className="font-serif text-[15px]">{t("leftPage", { page })}</span>
+                {page === currentPage && <span className="ml-2 text-xs text-muted">{t("leftHere")}</span>}
               </button>
               <button
                 onClick={() => onToggleBookmark(page)}
                 className="px-5 text-xs text-muted opacity-0 group-hover:opacity-100 hover:text-accent"
               >
-                Kaldır
+                {t("leftRemove")}
               </button>
             </li>
           ))}
@@ -269,6 +297,7 @@ function Bookmarks({ bookmarks, currentPage, onGoTo, onToggleBookmark }: Props) 
 }
 
 function Highlights({ book, currentPage, onGoTo, onAsk }: Props) {
+  const t = useT("library");
   const all = useBookAnnotations(book);
   const items = Object.entries(all)
     .flatMap(([page, list]) =>
@@ -279,8 +308,7 @@ function Highlights({ book, currentPage, onGoTo, onAsk }: Props) {
   if (!book || !items.length) {
     return (
       <Empty>
-        Henüz vurgu yok. Metni seç, <span className="font-mono text-xs">H</span> tuşuna bas ya da
-        çıkan renklerden birine tıkla.
+        {t("highlightsEmptyBefore")} <span className="font-mono text-xs">H</span> {t("highlightsEmptyAfter")}
       </Empty>
     );
   }
@@ -290,8 +318,8 @@ function Highlights({ book, currentPage, onGoTo, onAsk }: Props) {
         <li key={hl.id} className="group relative hover:bg-ink/5">
           <button onClick={() => onGoTo(hl.page)} className="block w-full px-5 py-2 text-left">
             <span className="text-xs tabular-nums text-muted">
-              s. {hl.page}
-              {hl.page === currentPage && " · buradasın"}
+              {t("leftPageShort", { page: hl.page })}
+              {hl.page === currentPage && t("leftHereSuffix")}
             </span>
             <p
               className="mt-0.5 line-clamp-4 border-l-[3px] pl-2 font-serif text-[15px] leading-snug"
@@ -302,10 +330,10 @@ function Highlights({ book, currentPage, onGoTo, onAsk }: Props) {
           </button>
           <div className="absolute top-2 right-4 flex gap-3 text-xs text-muted opacity-0 group-hover:opacity-100">
             <button onClick={() => onAsk(hl.text, hl.page)} className="hover:text-ink">
-              Sor
+              {t("leftAsk")}
             </button>
             <button onClick={() => removeAnnotations(book, hl.page, [hl.id])} className="hover:text-accent">
-              Sil
+              {t("leftDelete")}
             </button>
           </div>
         </li>
@@ -315,6 +343,7 @@ function Highlights({ book, currentPage, onGoTo, onAsk }: Props) {
 }
 
 function SearchTab({ query, onQueryChange, search, currentPage, onGoTo, searchInputRef }: Props) {
+  const t = useT("library");
   const goToHit = (dir: 1 | -1) => {
     const pages = search.hits.map((h) => h.page);
     if (!pages.length) return;
@@ -340,14 +369,13 @@ function SearchTab({ query, onQueryChange, search, currentPage, onGoTo, searchIn
               goToHit(e.shiftKey ? -1 : 1);
             }
           }}
-          placeholder="Belgede ara"
+          placeholder={t("leftSearchPlaceholder")}
           className="w-full border-b border-rule bg-transparent py-1.5 outline-none placeholder:text-muted focus:border-ink"
         />
         {query.trim().length >= 2 && (
           <p className="mt-2 text-xs text-muted tabular-nums">
-            {search.hits.length}
-            {search.capped && "+"} sonuç, {pageCount} sayfada
-            {search.searching && ` · taranıyor ${search.scanned}/${search.total}`}
+            {t("leftSearchResults", { n: `${search.hits.length}${search.capped ? "+" : ""}`, pages: pageCount })}
+            {search.searching && t("leftScanning", { scanned: search.scanned, total: search.total })}
           </p>
         )}
       </div>
@@ -358,7 +386,7 @@ function SearchTab({ query, onQueryChange, search, currentPage, onGoTo, searchIn
               onClick={() => onGoTo(hit.page)}
               className="block w-full px-5 py-2 text-left hover:bg-ink/5"
             >
-              <span className="text-xs tabular-nums text-muted">s. {hit.page}</span>
+              <span className="text-xs tabular-nums text-muted">{t("leftPageShort", { page: hit.page })}</span>
               <p className="mt-0.5 font-serif leading-snug">
                 {hit.snippet.slice(0, hit.start)}
                 <mark className="bg-mark text-inherit">

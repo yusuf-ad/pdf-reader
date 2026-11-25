@@ -2,7 +2,9 @@ import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Sans, Newsreader } from "next/font/google";
 import Script from "next/script";
 import ServiceWorker from "@/components/service-worker";
+import DesktopHint from "@/components/desktop-hint";
 import { THEME_STORAGE_KEY } from "@/lib/theme";
+import { langScript } from "@/lib/i18n/lang-script";
 import "./globals.css";
 
 const newsreader = Newsreader({
@@ -19,7 +21,7 @@ const plex = IBM_Plex_Sans({
 
 export const metadata: Metadata = {
   title: "Okuma",
-  description: "Seçtiğin kelimeleri Türkçeye çeviren PDF okuyucu",
+  description: "A PDF reader for highlighting, taking notes, and translating words in context",
   applicationName: "Okuma",
   icons: { icon: "/icon.svg", apple: "/apple-icon.png" },
   appleWebApp: { capable: true, title: "Okuma", statusBarStyle: "default" },
@@ -35,16 +37,20 @@ const themeScript = `try{var t=localStorage.getItem(${JSON.stringify(THEME_STORA
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
-      lang="tr"
+      lang="en"
       suppressHydrationWarning
       className={`${newsreader.variable} ${plex.variable} h-full antialiased`}
     >
-      <body className="h-full">
+      <body className="app-shell">
         {/* beforeInteractive: sunucu HTML'ine eklenir, sayfa boyanmadan çalışır */}
         <Script id="theme" strategy="beforeInteractive">
           {themeScript}
         </Script>
-        {children}
+        <Script id="lang" strategy="beforeInteractive">
+          {langScript}
+        </Script>
+        <DesktopHint />
+        <div className="app-content">{children}</div>
         <ServiceWorker />
         {/* Gece teması sayfa filtresi: aydınlığı ters çevirir ama renk tonunu korur, sonucu
             tam olarak sayfa zemini (#1d2129) ile yazı rengi (#d8d4cb) arasına yerleştirir */}

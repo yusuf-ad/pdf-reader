@@ -1,3 +1,4 @@
+import { translate } from "./i18n";
 // Boş defter: kendi notlarını almak için boş/çizgili/kareli sayfalardan oluşan bir PDF.
 // Kitaplığa sıradan bir PDF gibi girer; kalem, yazı ve vurgu araçları üzerinde aynen çalışır.
 // Açık kitaba (defter ya da sıradan PDF) araya aynı türden boş sayfa da eklenebilir.
@@ -41,7 +42,7 @@ export async function blankBookPdf(title: string, pages: number, style: PaperSty
   for (let i = 0; i < pages; i++) drawPaper(doc.addPage([PAGE_W, PAGE_H]), style);
 
   const bytes = await doc.save();
-  const name = `${title.replace(/[\/:*?"<>|]+/g, " ").trim() || "Defter"}.pdf`;
+  const name = `${title.replace(/[\/:*?"<>|]+/g, " ").trim() || translate("library", "blankDefaultName")}.pdf`;
   return new File([bytes as BlobPart], name, { type: "application/pdf", lastModified: now.getTime() });
 }
 

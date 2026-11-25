@@ -1,3 +1,5 @@
+import { translate } from "./i18n";
+
 // Kitaplık: açılan/eklenen PDF'ler IndexedDB'de tutulur. Sayfa yenilense de kaybolmaz,
 // kitaplıktan tek tıkla açılır. Kapak ve sayfa sayısı ilk açılışta hesaplanıp saklanır.
 
@@ -149,6 +151,44 @@ export async function addBook(file: File, opened = false, knownKey?: string) {
     data: existing?.data ?? file,
   });
   return { key, isNew: !existing, hasCover: !!existing?.cover };
+}
+
+const ONBOARDED_KEY = "pdf-reader:onboarded";
+let onboardedThisSession = false;
+let welcomePending: Promise<string | null> | null = null;
+
+/** The sample uses the same content-keyed import as uploaded PDFs. */
+export function addWelcomeBook(onlyFirstVisit = false): Promise<string | null> {
+  if (welcomePending) return welcomePending;
+  welcomePending = (async () => {
+    if (onlyFirstVisit) {
+      if (onboardedThisSession) return null;
+      try {
+        if (localStorage.getItem(ONBOARDED_KEY)) return null;
+      } catch {
+        // IndexedDB may still be available when localStorage is blocked.
+      }
+      // Library first renders before Reader finishes loading its book list.
+      if ((await listBooks()).length) return null;
+    }
+    const response = await fetch("/samples/welcome.pdf");
+    if (!response.ok) throw new Error("welcome_pdf_unavailable");
+    const file = new File([await response.blob()], translate("library", "librarySampleFileName"), {
+      type: "application/pdf",
+      lastModified: 0,
+    });
+    // A user may have imported their own file while the sample was loading.
+    if (onlyFirstVisit && (await listBooks()).length) return null;
+    const { key } = await addBook(file);
+    onboardedThisSession = true;
+    try {
+      localStorage.setItem(ONBOARDED_KEY, "true");
+    } catch {
+      // Remember it for this session if persistent storage is unavailable.
+    }
+    return key;
+  })().finally(() => { welcomePending = null; });
+  return welcomePending;
 }
 
 export async function getBook(key: string): Promise<Book | null> {

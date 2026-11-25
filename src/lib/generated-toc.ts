@@ -1,5 +1,7 @@
 "use client";
 
+import { translate } from "./i18n";
+
 // PDF'e gömülü içindekiler (outline) olmayan kitaplar için: kitabın basılı içindekiler
 // sayfası yapay zekayla okunur, basılı sayfa numaraları PDF sayfalarına eşlenir.
 // Yalnızca kullanıcı isteyince çalışır; sonuç kitap başına saklanır.
@@ -7,6 +9,7 @@
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { OutlineItem } from "./book-context";
 import { bookKey, get, set, useStored } from "./storage";
+import { aiHeaders, hasAiKey } from "./ai-settings";
 
 /** Basılı içindekiler genelde ilk sayfalarda */
 const SCAN_PAGES = 30;
@@ -61,6 +64,7 @@ export async function generateToc(
   readPage: (page: number) => Promise<string>,
   signal?: AbortSignal,
 ): Promise<OutlineItem[] | null> {
+  if (!hasAiKey()) return null;
   const pageText = new Map<number, string>();
   const read = async (p: number) => {
     if (!pageText.has(p)) pageText.set(p, normalize(await readPage(p).catch(() => "")));
@@ -72,16 +76,17 @@ export async function generateToc(
     const text = (await readPage(p).catch(() => "")).trim();
     if (text) sample.push(`[s. ${p}]\n${text.slice(0, SCAN_PAGE_CHARS)}`);
   }
-  if (!sample.length) throw new Error("İlk sayfalarda okunabilir metin yok (taranmışsa önce metin tanımayı aç).");
+  if (!sample.length) throw new Error(translate("ai", "tocNoText"));
 
+  if (!hasAiKey()) return null;
   const res = await fetch("/api/toc", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...aiHeaders() },
     body: JSON.stringify({ numPages: pdf.numPages, sample: sample.join("\n\n") }),
     signal,
   });
   const data = (await res.json()) as TocResponse & { error?: string };
-  if (!res.ok) throw new Error(data.error ?? "İçindekiler çıkarılamadı.");
+  if (!res.ok) throw new Error(data.error ?? translate("ai", "tocError"));
   if (!data.found || !data.entries.length) return null;
 
   // İçindekiler sayfalarında bütün başlıklar geçtiği için aramada atlanır

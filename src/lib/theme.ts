@@ -1,11 +1,13 @@
+import { translate } from "./i18n";
+
 export const THEMES = [
-  { id: "light", label: "Açık" },
-  { id: "sepia", label: "Sepya" },
-  { id: "baroque", label: "Barok" },
-  { id: "night", label: "Gece" },
-  { id: "dark", label: "Koyu" },
-  { id: "monokai", label: "Monokai" },
-  { id: "ristretto", label: "Ristretto" },
+  { id: "light", get label() { return translate("library", "themeLight"); } },
+  { id: "sepia", get label() { return translate("library", "themeSepia"); } },
+  { id: "baroque", get label() { return translate("library", "themeBaroque"); } },
+  { id: "night", get label() { return translate("library", "themeNight"); } },
+  { id: "dark", get label() { return translate("library", "themeDark"); } },
+  { id: "monokai", get label() { return translate("library", "themeMonokai"); } },
+  { id: "ristretto", get label() { return translate("library", "themeRistretto"); } },
 ] as const;
 
 export type Theme = (typeof THEMES)[number]["id"];

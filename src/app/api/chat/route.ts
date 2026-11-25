@@ -1,4 +1,4 @@
-import { openai } from "@ai-sdk/openai";
+import { aiErrorCode, type Ai, getAi, languageInstruction, missingKeyResponse } from "@/lib/ai-provider";
 import { convertToModelMessages, generateText, hasToolCall, isStepCount, streamText } from "ai";
 import {
   formatBookContext,
@@ -42,7 +42,11 @@ const SYSTEM = `Sen bir okuma asistanısın. Kullanıcı bir kitap/PDF okuyor ve
   - Yazılım/teknik kitap: kavramı teknik olarak doğru ve sade açıkla, gerektiğinde kitabın kullandığı dil ve sürümle uyumlu kısa kod örneği ver (kod bloğu içinde), pratikte nerede kullanıldığını ve sık yapılan hataları söyle. Teknik terimlerin İngilizcesini koru, gerekirse Türkçesini parantezle ver.
   - Yabancı dilde edebiyat/genel metin: kelime/ifade sorularında anlamı, bu bağlamdaki kullanımı ve gerekirse dilbilgisini açıkla.
   - Tarih, felsefe vb.: geçen kişi, olay ve kavramlara okumayı kolaylaştıracak kadar arka plan ver.
-- Varsayılan olarak Türkçe cevap ver; kullanıcı başka dil isterse ona uy. Kısa ve net ol.
+- Varsayılan olarak Türkçe cevap ver; kullanıcı başka dil isterse ona uy. Net ol; uzunluğu soruya göre ayarla:
+  - Basit soruya birkaç cümleyle cevap ver; başlık ve liste yalnızca çok parçalı bir şeyi açıklarken gerekir.
+- Açıklarken öğret, yeniden ifade etme: bir şeyi açıklaman istendiğinde onu başka kelimelerle tekrar etmek yetmez; arkasındaki asıl bilgiyi ver (tanım, kitabın terimleri, somut örnek). Önce kısa bir özetle büyük resmi göster, sonra ayrıntıya in. Karıştırılabilecek kavramlar varsa farkını belirt. Kitabın terimlerini kitabın dilinde koru. Derinliği <hafiza>'daki seviyeye göre ayarla.
+- Bilgiyi önce verilen metne dayandır; metinde olmayıp genel bilgiden eklediğin kısmı belli et.
+- Cevabı "metni gönderirsen…", "istersen … hazırlayayım" gibi tekliflerle bitirme; kitap zaten elinde, takip soruları aşağıdaki öneri bloğunda.
 - Metinde olmayan bir şeyi metindeymiş gibi söyleme; genel bilgini kullandığında bunu belli et.
 - web_search aracıyla internette arama yapabilirsin. Güncel bilgi gereken sorularda (bir kursun/ürünün şu anki hâli, son sürümler, tarihler, haberler, değişmiş olabilecek her şey) ya da kullanıcı açıkça "ara", "internette bak", "güncel" derse ara. Cevap kitapta veya genel bilgide zaten varsa arama. Aradıysan bulduğun bilgiyi kaynağına dayandır, kitaptaki bilgiyle çelişiyorsa ikisini de belirt.
 - Kullanıcının kitapta işaretlediği yerler <isaretler> içinde gelir: sayfa, renk, işaretin altındaki yazı ve geçtiği yer (işaretli satırdan başlayan metin). "İşaretlediğim", "sarıyla işaretli", "yanlış yaptığım sorular" gibi ifadeleri buna göre yorumla; ör. soru numarası işaretliyse o soru, geçtiği yerde başlayan sorudur. Rengin anlamını kullanıcı söylemediyse varsayma. Geçtiği yer kesik olabilir; eksik kısmı uydurma.
@@ -60,15 +64,8 @@ ${SUGGESTIONS_OPEN}
 ${SUGGESTIONS_CLOSE}`;
 
 export async function POST(req: Request) {
-  if (!process.env.OPENAI_API_KEY) {
-    return Response.json(
-      {
-        error:
-          "OPENAI_API_KEY tanımlı değil (.env.local dosyasını kontrol et).",
-      },
-      { status: 500 },
-    );
-  }
+  const ai = getAi(req);
+  if (!ai) return missingKeyResponse();
 
   const {
     messages,
@@ -77,7 +74,7 @@ export async function POST(req: Request) {
   }: { messages: ChatMessage[]; book?: BookContext; memory?: unknown } = await req.json();
   // Hafıza kapalıysa istemci göndermez; o zaman araç da verilmez
   const memory = rawMemory === undefined ? null : sanitizeMemory(rawMemory);
-  const model = openai(process.env.OPENAI_MODEL || "gpt-6-luna");
+  const model = ai.model;
   const last = messages.length - 1;
 
   const withReferences = await Promise.all(
@@ -111,7 +108,7 @@ export async function POST(req: Request) {
         // Belge metni yalnızca son istekte gönderilir; önceki özetler sohbette zaten varl
         const prompt =
           i === last
-            ? await buildSkillPrompt(skill, model, req.signal)
+            ? await buildSkillPrompt(skill, model, req.signal, languageInstruction(req))
             : skill.name === "belge"
               ? `${skill.request ?? ""}
 (${skillLabel(skill)}: bu sayfalara soruldu; cevabı aşağıda.)`
@@ -145,7 +142,7 @@ ${prompt}` : prompt;
   // Test isteğinde model mutlaka test aracını, kelime isteğinde öneri aracını çağırır
   const lastSkill = messages[last]?.metadata?.skill;
   const skillName = lastSkill?.name;
-  const system = [SYSTEM, memory && formatMemory(memory), book && bookBlock(book, messages[last])]
+  const system = [SYSTEM, memory && formatMemory(memory), book && bookBlock(book, messages[last]), languageInstruction(req)]
     .filter(Boolean)
     .join("\n\n");
   const result = streamText({
@@ -158,7 +155,7 @@ ${prompt}` : prompt;
       ...markTools,
       ...noteTools,
       ...(memory ? memoryTools(memory) : {}),
-      web_search: openai.tools.webSearch({ searchContextSize: "medium" }),
+      web_search: ai.webSearch(),
     },
     toolChoice:
       skillName === "test"
@@ -179,13 +176,14 @@ ${prompt}` : prompt;
       hasToolCall("markPages"),
       hasToolCall("writeNote"),
     ],
-    // Geçmiş mesajlar OpenAI'da saklanan kimlikle değil içerikle gönderilir; yarıda kalan
-    // ya da süresi dolan kayıtlar sonraki mesajı bozmasın
-    providerOptions: { openai: { store: false } },
+    // OpenAI'da geçmiş mesajlar saklanan kimlikle değil içerikle gönderilir (store: false);
+    // yarıda kalan ya da süresi dolan kayıtlar sonraki mesajı bozmasın
+    providerOptions: ai.providerOptions,
     abortSignal: req.signal,
   });
 
-  return result.toUIMessageStreamResponse({ sendSources: true });
+  // Hata metni yerine kod gider; istemci invalid_api_key görünce ayarları açar
+  return result.toUIMessageStreamResponse({ sendSources: true, onError: aiErrorCode });
 }
 
 /** Seçili metin veya skill varsa sayfa metni zaten mesajda; açık sayfa yalnızca serbest sorularda eklenir. */
@@ -224,8 +222,9 @@ Bu parçada soruyla ilgili her bilgiyi ayrıntısıyla, mümkünse metinden ayne
 /** Kısa belgeyi doğrudan, uzun belgeyi önce parça parça özetleyip gönderir. */
 async function buildSkillPrompt(
   skill: SkillRequest,
-  model: ReturnType<typeof openai>,
+  model: Ai["model"],
   signal: AbortSignal,
+  language: string,
 ) {
   if (!skill.pages.length)
     return skillPrompt(skill, "(Bu sayfalarda okunabilir metin yok.)", false);
@@ -244,11 +243,11 @@ async function buildSkillPrompt(
         model,
         abortSignal: signal,
         system:
-          skill.name === "kelime"
+          (skill.name === "kelime"
             ? wordsChunkSystem(skill.request)
             : skill.name === "belge"
               ? questionChunkSystem(skill.request)
-              : CHUNK_SYSTEM,
+              : CHUNK_SYSTEM) + (language ? `\n\n${language}` : ""),
         prompt: formatPages(pages),
       });
       summaries[i] = `## ${range}\n${text}`;

@@ -1,13 +1,34 @@
+import { getLang, translate } from "./i18n";
 /** Sohbette "/" ile çağrılan hazır görevler (skill). İstemci ve sunucu ortak kullanır. */
 
 export type SkillName = "ozet" | "sayfa" | "test" | "kelime" | "isaretle" | "kontrol" | "belge";
 
 export type SkillInfo = { name: SkillName; usage: string; description: string };
 
+/** Komutlar arayüz diline göre gösterilir; yazarken iki dildeki ad da çalışır. */
+const COMMANDS = {
+  ozet: { tr: "ozet", en: "summary" },
+  sayfa: { tr: "sayfa", en: "page" },
+  test: { tr: "test", en: "quiz" },
+} as const;
+type CommandSkill = keyof typeof COMMANDS;
+
+/** Komutun o anki dildeki yazılışı, ör. skillCommand("ozet") → "/summary" */
+export function skillCommand(name: CommandSkill) {
+  return `/${COMMANDS[name][getLang()]}`;
+}
+
+function commandSkill(cmd: string): CommandSkill | null {
+  const c = cmd.toLocaleLowerCase("tr");
+  for (const [name, words] of Object.entries(COMMANDS) as [CommandSkill, (typeof COMMANDS)[CommandSkill]][])
+    if (c === words.tr || c === words.en || (name === "ozet" && c === "özet")) return name;
+  return null;
+}
+
 export const SKILLS: SkillInfo[] = [
-  { name: "ozet", usage: "/ozet", description: "Tüm PDF'in özetini çıkarır (/ozet 10-25: yalnızca o sayfalar)" },
-  { name: "sayfa", usage: "/sayfa", description: "Açık olan sayfayı özetler" },
-  { name: "test", usage: "/test", description: "Tüm PDF'ten çoktan seçmeli test hazırlar (/test 10-25: yalnızca o sayfalar)" },
+  { name: "ozet", get usage() { return skillCommand("ozet"); }, get description() { return translate("ai", "skillSummaryDescription", { command: skillCommand("ozet") }); } },
+  { name: "sayfa", get usage() { return skillCommand("sayfa"); }, get description() { return translate("ai", "skillPageDescription"); } },
+  { name: "test", get usage() { return skillCommand("test"); }, get description() { return translate("ai", "skillQuizDescription", { command: skillCommand("test") }); } },
 ];
 
 /** Yazılan komutu çözer; skill değilse null. Hatalı kullanımda hata mesajı döner. */
@@ -18,16 +39,17 @@ export function parseSkill(
 ): { name: SkillName; from: number; to: number } | { error: string } | null {
   const m = input.trim().match(/^\/(\S+)\s*(.*)$/);
   if (!m) return null;
-  const [, cmd, arg] = m;
+  const [, typed, arg] = m;
+  const cmd = commandSkill(typed);
+  if (!cmd) return null;
   if (cmd === "sayfa") return { name: "sayfa", from: currentPage, to: currentPage };
-  if (cmd !== "ozet" && cmd !== "test") return null;
   // Aralık verilmezse tüm belge
   if (!arg) return { name: cmd, from: 1, to: numPages };
   const r = arg.match(/^(\d+)\s*(?:-\s*(\d+))?$/);
-  if (!r) return { error: `Kullanım: /${cmd} veya /${cmd} 10-25` };
+  if (!r) return { error: translate("ai", "skillUsage", { command: skillCommand(cmd).slice(1) }) };
   const from = Math.max(1, +r[1]);
   const to = Math.min(numPages, r[2] ? +r[2] : from);
-  if (from > to) return { error: `Geçersiz sayfa aralığı (belge ${numPages} sayfa).` };
+  if (from > to) return { error: translate("ai", "skillInvalidRange", { n: numPages }) };
   return { name: cmd, from, to };
 }
 
@@ -60,14 +82,16 @@ export function parseQuizRequest(
   const text = input.toLocaleLowerCase("tr");
   const wantsQuiz =
     /(^|[^\p{L}])(test|quiz|sınav)/u.test(text) ||
-    /\d+\s*(tane\s*)?soru/u.test(text);
+    /\d+\s*(tane\s*)?soru/u.test(text) ||
+    /\d+[\s-]*questions?/u.test(text);
   // "yap", "ver", "sor" yalnızca istek olarak ("test yap", "soru sor mısın"); "yapamadım", "soru" değil
   const verb =
     /(hazırla|oluştur|üret|çıkar)/u.test(text) ||
+    /(^|\s)(make|create|generate|give me|quiz me)(\s|$)/u.test(text) ||
     /(^|\s)(yap|ver|sor)(ar|abilir|sana|\s*m[ıi]s[ıi]n|\s|$|[.!?,])/u.test(text);
   if (!wantsQuiz || !verb || !numPages) return null;
 
-  const countMatch = text.match(/(\d+)\s*(tane\s*)?(soru|soruluk)/u);
+  const countMatch = text.match(/(\d+)\s*(tane\s*)?(soru|soruluk)/u) ?? text.match(/(\d+)[\s-]*questions?/u);
   const count = countMatch ? Math.min(30, Math.max(3, +countMatch[1])) : undefined;
   return { ...parseRange(text, numPages, currentPage), count };
 }
@@ -136,7 +160,7 @@ export function parseCheckRequest(
   const clamp = (n: number) => Math.min(numPages, Math.max(1, n));
   const span = text.match(/(\d+)\s*[-–]\s*(\d+)/u);
   if (span && +span[1] <= +span[2]) return { from: clamp(+span[1]), to: clamp(+span[2]) };
-  const single = text.match(/(?:s\.|sayfa)\s*(\d+)|(\d+)\.?\s*sayfa/u);
+  const single = text.match(/(?:s\.|sayfa|p\.|page)\s*(\d+)|(\d+)\.?\s*sayfa/u);
   if (single) {
     const page = clamp(+(single[1] ?? single[2]));
     return { from: page, to: page };
@@ -155,12 +179,13 @@ function parseRange(text: string, numPages: number, currentPage: number) {
     const to = clamp(+range[2]);
     if (from <= to) return { from, to };
   }
-  const single = text.match(/(?:s\.|sayfa)\s*(\d+)|(\d+)\.?\s*sayfa/u);
+  const single = text.match(/(?:s\.|sayfa|p\.|page)\s*(\d+)|(\d+)\.?\s*sayfa/u);
   if (single) {
     const page = clamp(+(single[1] ?? single[2]));
     return { from: page, to: page };
   }
-  if (/(bu|şu|açık|şu\s*anki)\s*sayfa/u.test(text)) return { from: currentPage, to: currentPage };
+  if (/(bu|şu|açık|şu\s*anki)\s*sayfa/u.test(text) || /(this|current)\s+page/u.test(text))
+    return { from: currentPage, to: currentPage };
   return { from: 1, to: numPages };
 }
 
@@ -174,8 +199,13 @@ const SKILL_TITLES: Record<SkillName, string> = {
   belge: "Sayfalara soru",
 };
 
-export const skillLabel = (s: Pick<SkillRequest, "name" | "from" | "to">) =>
-  `${SKILL_TITLES[s.name]} · s. ${s.from === s.to ? s.from : `${s.from}–${s.to}`}`;
+export const skillLabel = (s: Pick<SkillRequest, "name" | "from" | "to">) => {
+  const pages = s.from === s.to ? s.from : `${s.from}–${s.to}`;
+  // Server-side history text is part of the AI prompt and retains its original wording.
+  if (typeof window === "undefined") return `${SKILL_TITLES[s.name]} · s. ${pages}`;
+  const titles = { ozet: "skillTitleOzet", sayfa: "skillTitleSayfa", test: "skillTitleTest", kelime: "skillTitleKelime", isaretle: "skillTitleIsaretle", kontrol: "skillTitleKontrol", belge: "skillTitleBelge" } as const;
+  return translate("ai", "skillLabel", { title: translate("ai", titles[s.name]), pages });
+};
 
 /** Test için soru sayısı: tek sayfa 5, birkaç sayfa 8, daha uzun aralık 10. */
 export const quizSize = (s: Pick<SkillRequest, "from" | "to" | "count">) => {

@@ -1,7 +1,10 @@
 "use client";
 
+import { useT } from "@/lib/i18n";
 import { useEffect, useRef } from "react";
 import type { Translation } from "@/lib/types";
+import { openAiSettings, useAiSettings } from "@/lib/ai-settings";
+import { clientAiErrorCode } from "@/lib/chat";
 import Highlighted from "./highlighted";
 import HighlightSwatches from "./highlight-swatches";
 
@@ -26,7 +29,11 @@ type Props = {
 const WIDTH = 380;
 
 export default function TranslationPopover({ state, onClose, onAsk, highlightColor, onHighlight }: Props) {
+  const t = useT("ai");
   const ref = useRef<HTMLDivElement>(null);
+  const settings = useAiSettings();
+  const code = clientAiErrorCode(state.error);
+  const needsKey = !settings?.key || code === "missing_api_key" || code === "invalid_api_key";
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -62,11 +69,22 @@ export default function TranslationPopover({ state, onClose, onAsk, highlightCol
         )}
       </div>
 
-      {state.status === "loading" && (
-        <p className="mt-2 animate-pulse text-sm text-muted">Çevriliyor…</p>
+      {needsKey ? (
+        <div className="mt-2 text-sm text-muted">
+          <p>{settings?.key ? t("chatInvalidKey") : t("chatAddKey")}</p>
+          <button onClick={openAiSettings} className="mt-2 border border-rule px-3 py-1.5 text-ink hover:border-ink">
+            {t("chatSettings")}
+          </button>
+        </div>
+      ) : state.status === "loading" && (
+        <p className="mt-2 animate-pulse text-sm text-muted">{t("translationLoading")}</p>
       )}
 
-      {state.status === "error" && <p className="mt-2 text-sm text-accent">{state.error}</p>}
+      {!needsKey && state.status === "error" && (
+        <p className="mt-2 text-sm text-accent">
+          {code === "rate_limited" ? t("chatRateLimited") : code === "ai_error" ? t("translationFailed") : state.error}
+        </p>
+      )}
 
       {state.status === "done" && result && (
         <>
@@ -83,14 +101,13 @@ export default function TranslationPopover({ state, onClose, onAsk, highlightCol
       )}
 
       <div className="mt-4 -mb-1.5 flex items-center justify-between">
-        {state.status !== "loading" ? (
+        {needsKey ? <span /> : state.status !== "loading" ? (
           <button
             onMouseDown={(e) => e.preventDefault()}
             onClick={onAsk}
             className="flex items-center gap-2 text-xs text-muted hover:text-ink"
           >
-            Bununla ilgili sor
-            <kbd className="border border-rule px-1 font-mono text-[11px]">Ctrl K</kbd>
+            {t("translationAsk")}<kbd className="border border-rule px-1 font-mono text-[11px]">Ctrl K</kbd>
           </button>
         ) : (
           <span />

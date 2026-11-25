@@ -1,5 +1,6 @@
 "use client";
 
+import { translate, useT } from "@/lib/i18n";
 import dynamic from "next/dynamic";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import {
@@ -38,11 +39,13 @@ import {
 } from "@/lib/annotations";
 import type { PaperStyle } from "@/lib/blank-book";
 import type { Reference } from "@/lib/chat";
+import { aiHeaders, hasAiKey } from "@/lib/ai-settings";
 import { deleteBookOcr, renameBookOcr, setOcrEnabled, useOcrEnabled } from "@/lib/ocr";
 import type { MarkInput } from "@/lib/page-marks";
 import { getPageText, usePdfSearch } from "@/lib/pdf-search";
-import { cropPage, renameBookQuestions, type NewQuestion } from "@/lib/questions";
+import { cropPages, renameBookQuestions, type NewQuestion } from "@/lib/questions";
 import { loadProgress, saveProgress, toggleBookmark, useBookmarks } from "@/lib/reading-state";
+import { addSelectionNote } from "@/lib/chat-notes";
 import { extractSelection, selectedPdfText, selectionHighlights } from "@/lib/selection";
 import { deleteBook as deleteBookData, insertBookPage, requestPersistence } from "@/lib/storage";
 import { makeTextRenderer } from "@/lib/text-highlight";
@@ -51,7 +54,7 @@ import { setStickyOpen, useStickyOpen } from "@/lib/sticky-notes";
 import { useSavedWords } from "@/lib/use-saved-words";
 import { AiMarkerStatus, useAiMarker } from "./ai-marker";
 import ChatModal from "./chat-modal";
-import type { CropRegion } from "./crop-layer";
+import type { CropPart } from "./crop-layer";
 import LeftPanel, { type LeftTab } from "./left-panel";
 import Library from "./library";
 import { QuestionDialog } from "./questions";
@@ -110,6 +113,7 @@ export type PaneProps = {
 };
 
 export default function Reader({ pane }: { pane: PaneProps }) {
+  const t = useT("reader");
   const [file, setFile] = useState<File | null>(null);
   // Açık kitabın anahtarı (PDF içeriğinden; notlar buna bağlı)
   const [key, setKey] = useState<string | null>(null);
@@ -349,7 +353,7 @@ export default function Reader({ pane }: { pane: PaneProps }) {
         await openFile(next, k);
         setScale(keepScale);
       } catch (err) {
-        alert(`Sayfa eklenemedi: ${(err as Error).message}`);
+        alert(translate("reader", "readerInsertFailed", { error: (err as Error).message }));
       } finally {
         setInserting(false);
       }
@@ -613,6 +617,18 @@ export default function Reader({ pane }: { pane: PaneProps }) {
     [key, closePopover],
   );
 
+  /** Seçili metni alıntı olarak notlara ekler. */
+  const noteSelection = useCallback(() => {
+    const selection = window.getSelection();
+    const picked = selection && selectedPdfText(selection);
+    if (!key || !picked) return;
+    addSelectionNote(key, selection!.toString() || picked.text, picked.page);
+    selection!.removeAllRanges();
+    lastSelectionRef.current = null;
+    closePopover();
+    setAskChip(null);
+  }, [key, closePopover]);
+
   /**
    * Kalem çizgilerini, yazıları ve vurguları PDF'e yazıp kaydeder. İlk kayıtta (ya da farklı
    * kaydette) yer sorulur, sonra hep aynı dosyanın üzerine yazılır.
@@ -642,8 +658,8 @@ export default function Reader({ pane }: { pane: PaneProps }) {
       } catch (err) {
         if ((err as Error).name === "NotFoundError") {
           setSavedTo(null);
-          alert("Son kaydedilen dosya bulunamadı (taşınmış ya da silinmiş olabilir). Tekrar kaydet; yer sorulacak.");
-        } else alert(`PDF kaydedilemedi: ${(err as Error).message}`);
+          alert(translate("reader", "readerSavedFileMissing"));
+        } else alert(translate("reader", "readerSaveFailed", { error: (err as Error).message }));
       } finally {
         setSaving(false);
       }
@@ -714,14 +730,14 @@ export default function Reader({ pane }: { pane: PaneProps }) {
   }, [closePopover]);
 
   const handleCrop = useCallback(
-    async (page: number, region: CropRegion) => {
+    async (parts: CropPart[]) => {
       setCropping(false);
       if (!pdf || !file) return;
       try {
-        const { image, sourceWidth } = await cropPage(pdf, page, region);
-        setQuestionDraft({ image, sourceWidth, book: key, bookName: file.name, page });
+        const { image, sourceWidth } = await cropPages(pdf, parts);
+        setQuestionDraft({ image, sourceWidth, book: key, bookName: file.name, page: parts[0].page });
       } catch (err) {
-        alert(`Soru kırpılamadı: ${(err as Error).message}`);
+        alert(translate("reader", "readerCropFailed", { error: (err as Error).message }));
       }
     },
     [pdf, file, key],
@@ -744,7 +760,7 @@ export default function Reader({ pane }: { pane: PaneProps }) {
       try {
         picture = await pictureFromBlob(image);
       } catch {
-        alert("Görsel okunamadı.");
+        alert(translate("reader", "readerImageUnreadable"));
         return;
       }
       setTool(null);
@@ -981,14 +997,15 @@ export default function Reader({ pane }: { pane: PaneProps }) {
     setPopover({ x, y, word: picked.word, sentence: picked.sentence, status: "loading" });
 
     try {
+      if (!hasAiKey()) throw new Error("missing_api_key");
       const res = await fetch("/api/translate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...aiHeaders() },
         body: JSON.stringify({ word: picked.word, sentence: picked.sentence }),
         signal: controller.signal,
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Çeviri başarısız.");
+      if (!res.ok) throw new Error(data.error ?? translate("reader", "readerTranslationFailed"));
 
       const result = data as Translation;
       setPopover((p) => p && { ...p, status: "done", result });
@@ -1010,31 +1027,33 @@ export default function Reader({ pane }: { pane: PaneProps }) {
   const showPanels = !focusMode;
 
   return (
-    <div className="relative flex h-full">
+    <div className="reader relative flex h-full min-w-0">
       {file && leftOpen && showPanels && (
-        <ResizablePanel id="left" edge="right" defaultWidth={320} minWidth={240}>
-          <LeftPanel
-            tab={leftTab}
-            onTabChange={(tab) => {
-              setLeftTab(tab);
-              if (tab === "search") requestAnimationFrame(() => searchInputRef.current?.focus());
-            }}
-            pdf={pdf}
-            currentPage={currentPage}
-            onGoTo={goTo}
-            bookmarks={bookmarks}
-            onToggleBookmark={(page) => key && toggleBookmark(key, page)}
-            query={searchQuery}
-            onQueryChange={setSearchQuery}
-            search={search}
-            searchInputRef={searchInputRef}
-            book={key}
-            onAsk={askAbout}
-            onStartCrop={startCrop}
-            onOpenFile={openFile}
-            onAskImage={askImage}
-          />
-        </ResizablePanel>
+        <div className="reader-side-panel h-full shrink-0">
+          <ResizablePanel id="left" edge="right" defaultWidth={320} minWidth={240}>
+            <LeftPanel
+              tab={leftTab}
+              onTabChange={(tab) => {
+                setLeftTab(tab);
+                if (tab === "search") requestAnimationFrame(() => searchInputRef.current?.focus());
+              }}
+              pdf={pdf}
+              currentPage={currentPage}
+              onGoTo={goTo}
+              bookmarks={bookmarks}
+              onToggleBookmark={(page) => key && toggleBookmark(key, page)}
+              query={searchQuery}
+              onQueryChange={setSearchQuery}
+              search={search}
+              searchInputRef={searchInputRef}
+              book={key}
+              onAsk={askAbout}
+              onStartCrop={startCrop}
+              onOpenFile={openFile}
+              onAskImage={askImage}
+            />
+          </ResizablePanel>
+        </div>
       )}
 
       <main
@@ -1145,7 +1164,7 @@ export default function Reader({ pane }: { pane: PaneProps }) {
           data-scroll-root
           onScroll={handleScroll}
           onMouseUp={handleMouseUp}
-          className="relative flex-1 overflow-auto px-8 py-10"
+          className="reader-pages relative min-h-0 flex-1 overflow-auto px-8 py-10"
         >
           {file && (
             <PdfViewer
@@ -1178,7 +1197,7 @@ export default function Reader({ pane }: { pane: PaneProps }) {
 
         {cropping && (
           <div className="pointer-events-none absolute top-16 left-1/2 z-20 -translate-x-1/2 border border-rule bg-sheet px-3 py-1.5 text-xs shadow-[0_4px_16px_var(--shadow)]">
-            Soruyu fareyle çerçevele · <span className="font-mono">Esc</span> vazgeç
+            {t("readerCropInstruction")}<span className="font-mono">{t("readerEscapeKey")}</span>{t("readerCropCancel")}
           </div>
         )}
 
@@ -1190,31 +1209,33 @@ export default function Reader({ pane }: { pane: PaneProps }) {
 
         {dragging && (
           <div className="pointer-events-none absolute inset-3 flex items-center justify-center border border-dashed border-ink/40 bg-paper/80 font-serif text-lg">
-            Bırak, açalım
+            {t("readerDropToOpen")}
           </div>
         )}
       </main>
 
       {rightOpen && showPanels && (
-        <ResizablePanel id="words" edge="left" defaultWidth={360} minWidth={280}>
-          <WordList
-            words={words}
-            onRemove={remove}
-            onAsk={askWord}
-            onClear={clear}
-            currentFileName={file?.name ?? null}
-            onGoTo={goTo}
-            book={key}
-            currentPage={currentPage}
-            onClose={() => setRightOpen(false)}
-          />
-        </ResizablePanel>
+        <div className="reader-side-panel h-full shrink-0">
+          <ResizablePanel id="words" edge="left" defaultWidth={360} minWidth={280}>
+            <WordList
+              words={words}
+              onRemove={remove}
+              onAsk={askWord}
+              onClear={clear}
+              currentFileName={file?.name ?? null}
+              onGoTo={goTo}
+              book={key}
+              currentPage={currentPage}
+              onClose={() => setRightOpen(false)}
+            />
+          </ResizablePanel>
+        </div>
       )}
 
       {(!file || libraryOpen) && (
         <div
           // Bölmenin içinde: yandaki kitap görünür kalsın
-          className="absolute inset-0 z-30 overflow-y-auto bg-paper"
+          className="reader-library absolute inset-0 z-30 overflow-y-auto bg-paper"
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             e.preventDefault();
@@ -1245,7 +1266,7 @@ export default function Reader({ pane }: { pane: PaneProps }) {
               await openFile(await blankBookPdf(title, pages, style));
             }}
             onClose={file ? () => setLibraryOpen(false) : pane.onClosePane}
-            closeLabel={file ? undefined : "Bölmeyi kapat"}
+            closeLabel={file ? undefined : t("readerClosePane")}
           />
         </div>
       )}
@@ -1266,8 +1287,12 @@ export default function Reader({ pane }: { pane: PaneProps }) {
           className="fixed z-30 flex items-center border border-rule bg-sheet text-sm shadow-[0_4px_16px_var(--shadow)]"
         >
           <button onClick={openChat} className="flex items-center gap-2 px-3 py-1.5 hover:text-ink">
-            Bu bölümü sor
-            <kbd className="font-mono text-[11px] text-muted">Ctrl K</kbd>
+            {t("readerAskSelection")}
+            <kbd className="font-mono text-[11px] text-muted">{t("readerAskShortcut")}</kbd>
+          </button>
+          <span className="h-5 w-px bg-rule" />
+          <button onClick={noteSelection} className="px-3 py-1.5 hover:text-ink">
+            {t("readerAddToNote")}
           </button>
           <span className="h-5 w-px bg-rule" />
           <HighlightSwatches current={highlightColor} onPick={highlightSelection} />

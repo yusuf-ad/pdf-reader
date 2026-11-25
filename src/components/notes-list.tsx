@@ -1,22 +1,26 @@
 "use client";
 
+import { useT } from "@/lib/i18n";
 import { useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { removeAnnotations, useBookAnnotations, type Note } from "@/lib/annotations";
 import { removeChatNote, useChatNotes, type ChatNote } from "@/lib/chat-notes";
 
-type Filter = "all" | "text" | "chat";
+type Filter = "all" | "text" | "quote" | "chat";
 
-const FILTERS: [Filter, string][] = [
-  ["all", "Tümü"],
-  ["text", "Yazılar"],
-  ["chat", "Sohbetten"],
-];
+const FILTERS = [
+  ["all", "notesFilterAll"],
+  ["text", "notesFilterText"],
+  ["quote", "notesFilterQuotes"],
+  ["chat", "notesFilterChat"],
+] as const;
 
-// Kalem çizgileri ve vurgular not sayılmaz; yalnızca sayfaya yazılanlar ve sohbetten alınanlar
+// Kalem çizgileri ve vurgular not sayılmaz; yalnızca sayfaya yazılanlar, seçilip eklenen alıntılar
+// ve sohbetten alınanlar
 type Item =
   | { kind: "text"; id: string; page: number; order: number; note: Note }
-  | { kind: "chat"; id: string; page: number | null; order: number; note: ChatNote };
+  | { kind: "chat" | "quote"; id: string; page: number | null; order: number; note: ChatNote };
 
 /** Kitabın notları: sayfa sırasıyla, sayfasızlar en sonda. */
 export function useNotes(book: string | null): Item[] {
@@ -31,7 +35,8 @@ export function useNotes(book: string | null): Item[] {
     }
     for (const n of chatNotes) {
       // Sayfadaki yazılardan sonra, eklenme sırasıyla
-      items.push({ kind: "chat", id: n.id, page: n.page, order: 1 + n.createdAt, note: n });
+      const kind = n.source === "selection" ? "quote" : "chat";
+      items.push({ kind, id: n.id, page: n.page, order: 1 + n.createdAt, note: n });
     }
     const pageOf = (i: Item) => i.page ?? Infinity;
     return items.sort((a, b) => pageOf(a) - pageOf(b) || a.order - b.order);
@@ -47,6 +52,7 @@ type Props = {
 };
 
 export default function NotesList({ book, items, currentPage, onGoTo, query }: Props) {
+  const t = useT("reader");
   const [filter, setFilter] = useState<Filter>("all");
 
   const filtered = useMemo(() => {
@@ -62,8 +68,7 @@ export default function NotesList({ book, items, currentPage, onGoTo, query }: P
   if (!book || !items.length) {
     return (
       <p className="px-6 py-6 text-sm leading-relaxed text-muted">
-        Sayfaya yazdığın notlar (<span className="font-mono text-xs">T</span>) ve sohbette
-        &ldquo;Nota ekle&rdquo; dediğin cevaplar burada sayfa sırasıyla görünür.
+        {t("notesEmptyBeforeShortcut")}<span className="font-mono text-xs">{t("notesTextShortcut")}</span>{t("notesEmptyAfterShortcut")}
       </p>
     );
   }
@@ -87,7 +92,7 @@ export default function NotesList({ book, items, currentPage, onGoTo, query }: P
                 filter === id ? "bg-ink/10 text-ink" : "text-muted hover:text-ink"
               }`}
             >
-              {label}
+              {t(label)}
               <span className="ml-1 tabular-nums opacity-60">{count}</span>
             </button>
           );
@@ -95,7 +100,7 @@ export default function NotesList({ book, items, currentPage, onGoTo, query }: P
       </div>
 
       <ul className="flex-1 overflow-y-auto px-6 pb-4">
-        {filtered.length === 0 && <li className="py-6 text-sm text-muted">Eşleşen not yok.</li>}
+        {filtered.length === 0 && <li className="py-6 text-sm text-muted">{t("notesNoMatches")}</li>}
         {filtered.map((item, i) => (
           <li key={item.id}>
             {item.page !== filtered[i - 1]?.page &&
@@ -104,11 +109,11 @@ export default function NotesList({ book, items, currentPage, onGoTo, query }: P
                   onClick={() => onGoTo(item.page!)}
                   className="mt-3 mb-1 block text-xs tabular-nums text-muted hover:text-ink"
                 >
-                  s. {item.page}
-                  {item.page === currentPage && " · buradasın"}
+                  {t("notesPage", { page: item.page })}
+                  {item.page === currentPage && t("notesYouAreHere")}
                 </button>
               ) : (
-                <p className="mt-3 mb-1 text-xs text-muted">Sayfasız</p>
+                <p className="mt-3 mb-1 text-xs text-muted">{t("notesWithoutPage")}</p>
               ))}
             <div className="group relative -mx-2 px-2 py-1.5 hover:bg-ink/5">
               {item.kind === "text" ? (
@@ -120,6 +125,8 @@ export default function NotesList({ book, items, currentPage, onGoTo, query }: P
                     {item.note.text}
                   </p>
                 </button>
+              ) : item.kind === "quote" ? (
+                <QuoteView note={item.note} />
               ) : (
                 <ChatNoteView note={item.note} />
               )}
@@ -127,7 +134,7 @@ export default function NotesList({ book, items, currentPage, onGoTo, query }: P
                 onClick={() => remove(item)}
                 className="absolute top-1.5 right-2 bg-sheet px-1 text-xs text-muted opacity-0 transition-opacity group-hover:opacity-100 hover:text-accent"
               >
-                Sil
+                {t("notesDelete")}
               </button>
             </div>
           </li>
@@ -139,6 +146,7 @@ export default function NotesList({ book, items, currentPage, onGoTo, query }: P
 
 /** Sohbetten alınan cevap; uzunsa kısaltılır, tıklayınca açılır. */
 function ChatNoteView({ note }: { note: ChatNote }) {
+  const t = useT("reader");
   const [open, setOpen] = useState(false);
   return (
     <div>
@@ -151,11 +159,28 @@ function ChatNoteView({ note }: { note: ChatNote }) {
         tabIndex={0}
         onClick={() => setOpen((o) => !o)}
         onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), setOpen((o) => !o))}
-        title={open ? "Kısalt" : "Tamamını göster"}
+        title={open ? t("notesCollapse") : t("notesShowAll")}
         className={`chat-md mt-1 cursor-pointer font-serif text-[15px] leading-snug ${open ? "" : "line-clamp-6"}`}
       >
-        <ReactMarkdown>{note.text}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{note.text}</ReactMarkdown>
       </div>
     </div>
+  );
+}
+
+/** Sayfadan seçilip eklenen alıntı; uzunsa kısaltılır, tıklayınca açılır. */
+function QuoteView({ note }: { note: ChatNote }) {
+  const t = useT("reader");
+  const [open, setOpen] = useState(false);
+  return (
+    <button
+      onClick={() => setOpen((o) => !o)}
+      title={open ? t("notesCollapse") : t("notesShowAll")}
+      className="block w-full border-l-2 border-accent/60 pl-2 text-left"
+    >
+      <p className={`font-serif text-[15px] leading-snug whitespace-pre-wrap ${open ? "" : "line-clamp-6"}`}>
+        {note.text}
+      </p>
+    </button>
   );
 }

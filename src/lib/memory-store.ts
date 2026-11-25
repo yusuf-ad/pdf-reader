@@ -9,6 +9,7 @@ import {
   type MemoryChange,
   type MemoryItem,
 } from "./memory";
+import { translate } from "./i18n";
 import { get, set, useStored } from "./storage";
 
 // Hafızanın yerel kaydı (tüm kitaplarda ortak). Yedeğe kendiliğinden girer.
@@ -26,6 +27,21 @@ const DEFAULT_MEMORY: MemoryItem[] = [
   { id: "def-kelime", text: "Kelime sorularında Türkçe anlam, eş anlamlı ve bir örnek cümle istiyor" },
   { id: "def-quiz", text: "Quizlerde şıkların neden yanlış olduğunu da görmek istiyor" },
 ];
+
+
+/** Localize untouched defaults for display while preserving the model's memory text. */
+export function memoryDisplayText(item: MemoryItem) {
+  const original = DEFAULT_MEMORY.find((entry) => entry.id === item.id);
+  if (!original || original.text !== item.text) return item.text;
+  const keys: Record<string, "memoryDefaultShort" | "memoryDefaultSummary" | "memoryDefaultCode" | "memoryDefaultWords" | "memoryDefaultQuiz"> = {
+    "def-kisa": "memoryDefaultShort",
+    "def-ozet": "memoryDefaultSummary",
+    "def-kod": "memoryDefaultCode",
+    "def-kelime": "memoryDefaultWords",
+    "def-quiz": "memoryDefaultQuiz",
+  };
+  return translate("ai", keys[item.id]);
+}
 
 const load = () => get<MemoryItem[]>(KEY) ?? DEFAULT_MEMORY;
 

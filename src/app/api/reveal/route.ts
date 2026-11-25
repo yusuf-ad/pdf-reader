@@ -54,7 +54,12 @@ function reveal(path: string) {
   else execFile("xdg-open", [dirname(path)], () => {});
 }
 
+// Yalnızca uygulama kullanıcının kendi bilgisayarında çalışırken anlamlı; public sunucuda
+// (ör. Vercel) sunucunun dosya sistemini taramak ve program çalıştırmak açık bırakılmaz.
+const ENABLED = process.env.NODE_ENV !== "production" || process.env.NEXT_PUBLIC_ENABLE_LOCAL_REVEAL === "1";
+
 export async function POST(req: Request) {
+  if (!ENABLED) return Response.json({ error: "not_available" }, { status: 404 });
   const parsed = requestSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Geçersiz istek." }, { status: 400 });
   const { key, size } = parsed.data;

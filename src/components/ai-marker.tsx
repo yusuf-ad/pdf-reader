@@ -1,5 +1,6 @@
 "use client";
 
+import { translate, useT } from "@/lib/i18n";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 import {
@@ -51,6 +52,7 @@ const subscribe = (l: () => void) => {
 
 /** Sayfanın üstünde asistanın imleci; yalnızca imleç bu sayfadayken çizilir. */
 export function AiCursor({ page, width }: { page: number; width: number }) {
+  const t = useT("ai");
   const c = useSyncExternalStore(
     subscribe,
     () => cursor,
@@ -82,7 +84,7 @@ export function AiCursor({ page, width }: { page: number; width: number }) {
           <path d="M1 1 L1 15 L5 11 L8 17 L10.5 16 L7.6 10 L13 10 Z" fill="var(--accent)" stroke="var(--sheet)" strokeWidth="1.2" />
         </svg>
         <span className="absolute top-4 left-3.5 bg-accent px-1.5 py-px font-sans text-[10px] whitespace-nowrap text-sheet">
-          Asistan
+          {t("markerAssistant")}
         </span>
       </div>
     </div>
@@ -221,7 +223,7 @@ export function useAiMarker(
         const aspect = vp.width / vp.height;
         const layout = await pageLayout(pdf, book, page);
         if (!layout.pieces.length) {
-          const error = "Bu sayfada metin yok (taranmış). Önce metin tanımayı aç.";
+          const error = translate("ai", "markerNoText");
           saveRecord(book, id, { page, ids, missing: questions.map((q) => q.number), error });
           setStatus({ kind: "error", text: error });
           return;
@@ -264,7 +266,7 @@ export function useAiMarker(
           }
 
           if (!stopRef.current) {
-            const text = `Doğru: ${q.correct.trim().toLocaleUpperCase("tr")}. ${q.note.trim()}`;
+            const text = translate("ai", "markerCorrectNote", { answer: q.correct.trim().toLocaleUpperCase("tr"), note: q.note.trim() });
             const { x, y, width } = spot.note;
             await moveTo(x, y);
             // Not harf harf yazılır; bitince gerçek not olarak eklenir
@@ -282,7 +284,7 @@ export function useAiMarker(
         setStatus({ kind: "done", id, count: questions.length - missing.length - kept.length, missing, kept });
       } catch (e) {
         saveRecord(book, id, { page, ids, missing, error: String(e) });
-        setStatus({ kind: "error", text: "İşaretlenemedi: sayfa okunamadı." });
+        setStatus({ kind: "error", text: translate("ai", "markerPageError") });
       } finally {
         await wait(600);
         setCursor(null);
@@ -322,6 +324,7 @@ export function AiMarkerStatus({
   onStop: () => void;
   onDismiss: () => void;
 }) {
+  const t = useT("ai");
   if (!status) return null;
   return (
     <div className="fixed right-5 bottom-5 z-30 flex items-baseline gap-4 border border-rule bg-sheet px-4 py-2 text-xs shadow-[0_4px_16px_var(--shadow)]">
@@ -329,24 +332,23 @@ export function AiMarkerStatus({
         <>
           <span className="flex items-baseline gap-2">
             <span className="inline-block h-2 w-2 animate-pulse bg-accent" />
-            Asistan işaretliyor
-            <span className="tabular-nums text-muted">
+            {t("markerRunning")}<span className="tabular-nums text-muted">
               {status.done}/{status.total}
             </span>
           </span>
           <button onClick={onStop} className="text-muted hover:text-accent">
-            Durdur
+            {t("chatStop")}
           </button>
         </>
       ) : status.kind === "done" ? (
         <>
           <span>
-            {status.count} soru işaretlendi
+            {t("markerCount", { n: status.count })}
             {status.missing.length > 0 && (
-              <span className="text-muted"> · bulunamadı: {status.missing.join(", ")}</span>
+              <span className="text-muted">{t("markerMissingNumbers", { numbers: status.missing.join(", ") })}</span>
             )}
             {status.kept.length > 0 && (
-              <span className="text-muted"> · doğru şıkkı işaretlemişsin: {status.kept.join(", ")}</span>
+              <span className="text-muted">{t("markerKeptNumbers", { numbers: status.kept.join(", ") })}</span>
             )}
           </span>
           {book && status.count > 0 && (
@@ -357,17 +359,17 @@ export function AiMarkerStatus({
               }}
               className="text-muted hover:text-accent"
             >
-              Geri al
+              {t("chatUndo")}
             </button>
           )}
-          <button onClick={onDismiss} aria-label="Kapat" className="text-muted hover:text-ink">
+          <button onClick={onDismiss} aria-label={t("actionClose")} className="text-muted hover:text-ink">
             ×
           </button>
         </>
       ) : (
         <>
           <span className="text-accent">{status.text}</span>
-          <button onClick={onDismiss} aria-label="Kapat" className="text-muted hover:text-ink">
+          <button onClick={onDismiss} aria-label={t("actionClose")} className="text-muted hover:text-ink">
             ×
           </button>
         </>
@@ -407,6 +409,7 @@ export function MarkCard({
   onRun?: (id: string, input: MarkInput) => void;
   onGoTo?: (page: number) => void;
 }) {
+  const t = useT("ai");
   const records = useStored(book && recordsKey(book), EMPTY);
   const rec = records[id] as MarkRecord | undefined;
   // Kart akış sırasında mı geldi (yeni istek), yoksa kayıtlı sohbetten mi yüklendi
@@ -420,21 +423,21 @@ export function MarkCard({
     onRun(id, complete);
   }, [live, complete, rec, onRun, id]);
 
-  if (error) return <p className="text-sm text-accent">İşaretlenemedi: {error}</p>;
+  if (error) return <p className="text-sm text-accent">{t("markerErrorPrefix")}{error}</p>;
   const questions = (input?.questions ?? []).filter((q) => q?.number);
   // Kontrolde kaç sorunun cevaplandığı bilinir (yanlışlarını kullanıcı söylediyse null)
   const checked = typeof input?.checked === "number" ? input.checked : null;
   // Doğru şıkkı işaretli çıkanlar yanlış sayılmaz
   const wrong = questions.length - (rec?.kept?.length ?? 0);
   const title = !ready
-    ? "Sorular çözülüyor…"
+    ? t("markerSolving")
     : checked === 0
-      ? "İşaretli cevap bulunamadı"
+      ? t("markerNoAnswers")
       : checked !== null
         ? wrong
-          ? `${checked} sorudan ${Math.max(0, checked - wrong)} doğru, ${wrong} yanlış`
-          : `${checked} sorunun hepsi doğru`
-        : "Yanlışlar işaretlendi";
+          ? t("markerScore", { n: checked, correct: Math.max(0, checked - wrong), wrong })
+          : t("markerAllCorrect", { n: checked })
+        : t("markerMarked");
   return (
     <section className="border border-rule bg-sheet px-5 py-4 font-sans">
       <div className="flex items-baseline gap-3">
@@ -445,10 +448,10 @@ export function MarkCard({
               {" · "}
               {onGoTo ? (
                 <button onClick={() => onGoTo(input.page!)} className="tracking-normal normal-case hover:text-ink">
-                  s. {input.page}
+                  {t("pageReference", { page: input.page! })}
                 </button>
               ) : (
-                <span className="tracking-normal normal-case">s. {input.page}</span>
+                <span className="tracking-normal normal-case">{t("pageReference", { page: input.page! })}</span>
               )}
             </>
           )}
@@ -457,12 +460,12 @@ export function MarkCard({
           <span className="flex gap-4 text-xs">
             {rec && !rec.undone && rec.ids.length > 0 ? (
               <button onClick={() => undoMarks(book, id)} className="text-muted hover:text-accent">
-                Geri al
+                {t("chatUndo")}
               </button>
             ) : (
               onRun && (
                 <button onClick={() => onRun(id, complete)} className="text-muted hover:text-ink">
-                  {rec ? "Tekrar uygula" : "Sayfaya işaretle"}
+                  {rec ? t("markerReapply") : t("markerApply")}
                 </button>
               )
             )}
@@ -479,7 +482,7 @@ export function MarkCard({
                 <span className="w-24 shrink-0 font-mono tabular-nums">
                   <span className="bg-[#f5c518]/50 px-0.5 text-ink">{q!.number}</span>
                   {q!.chosen && (
-                    <span className="ml-1.5 text-muted line-through" title="Senin cevabın">
+                    <span className="ml-1.5 text-muted line-through" title={t("markerYourAnswer")}>
                       {q!.chosen}
                     </span>
                   )}
@@ -488,10 +491,10 @@ export function MarkCard({
                 </span>
                 <span className={`font-serif ${lost || kept ? "text-muted line-through" : "text-ink/85"}`}>
                   {q!.note}
-                  {lost && <span className="ml-2 font-sans text-xs text-accent no-underline">sayfada bulunamadı</span>}
+                  {lost && <span className="ml-2 font-sans text-xs text-accent no-underline">{t("markerMissing")}</span>}
                   {kept && (
                     <span className="ml-2 font-sans text-xs text-good no-underline">
-                      doğru şıkkı ({q!.correct}) işaretlemişsin, yanlış sayılmadı
+                      {t("markerKept", { answer: q!.correct! })}
                     </span>
                   )}
                 </span>
