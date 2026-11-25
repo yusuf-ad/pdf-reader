@@ -48,3 +48,6 @@ next-env.d.ts
 
 # local agent skills (not part of the app)
 /.agents/
+
+# local film projects (cinecode): working files and a browser profile with an API key
+/Filmler/

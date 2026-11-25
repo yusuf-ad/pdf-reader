@@ -7,10 +7,11 @@
 **A calm PDF reader with an AI study partner.**
 Highlight, take notes, ask questions about the page you're on, and turn chapters into quizzes. Your books never leave your browser.
 
-[**Live demo →**](https://YOUR-DEMO-URL.vercel.app) &nbsp;·&nbsp; [Create your own Gemini key](https://aistudio.google.com/apikey) &nbsp;·&nbsp; English / Türkçe
+[**Live demo →**](https://YOUR-DEMO-URL.vercel.app) &nbsp;·&nbsp; Bring your own key: [Gemini](https://aistudio.google.com/apikey) or [OpenAI](https://platform.openai.com/api-keys) &nbsp;·&nbsp; English / Türkçe
 
-<!-- Replace with a 20–40s screen recording (docs/demo.gif) -->
-<img src="docs/demo.gif" alt="Okuma demo: highlighting, asking the AI and making a quiz" width="860" />
+<a href="docs/okuma-promo.mp4"><img src="docs/demo.gif" alt="Okuma: asking a question about the page and getting a grounded answer" width="600" /></a>
+
+[**▶ Watch the 60-second tour**](docs/okuma-promo.mp4)
 
 </div>
 
@@ -35,16 +36,21 @@ Reading a dense book usually means three apps: a PDF viewer, a notes app, and a 
 
 **AI (bring your own key)**
 - Ask about the current page or a selection; the answer is grounded in the text and says when it uses outside knowledge
-- Slash commands: summarize a range of pages, generate a quiz, build a vocabulary list, check your answers on a page of exercises
-- Tap a word to translate it in the context of its sentence and save it to your word list
+- Slash commands: `/summary` (the whole book or a page range), `/page` (just this page), `/quiz` (a multiple-choice quiz)
+- Mark your answers on an exercise page with the pen and ask the AI to check them
+- Tap a word to see what it means in the context of its sentence and save it to your word list
 - Optional web search for questions that need up-to-date information
 - Works with your own **Google Gemini** or **OpenAI** key (Google offers a free tier for Gemini; the app itself provides no keys)
 
 ## Try it in 60 seconds
 
-1. Open the [live demo](https://YOUR-DEMO-URL.vercel.app). A short welcome PDF opens with a few tips.
+1. Open the [live demo](https://YOUR-DEMO-URL.vercel.app). A short welcome PDF opens with a few tips. The app opens in Turkish if your browser lists Turkish, otherwise in English; switch any time from the library.
 2. Reading, highlighting and notes work right away; no account, no key.
-3. For AI features, click **Add AI key** in the toolbar, choose **Gemini**, and paste your own key from [Google AI Studio](https://aistudio.google.com/apikey) (sign in with Google → *Create API key* → copy). Google's free tier is enough to try everything; the key is yours, the app doesn't provide one.
+3. For AI features, click **Add AI key** in the toolbar, choose your provider and paste your own key:
+   - **Gemini:** from [Google AI Studio](https://aistudio.google.com/apikey) (sign in with Google → *Create API key* → copy). Google's free tier is enough to try everything.
+   - **OpenAI:** from the [OpenAI platform](https://platform.openai.com/api-keys) (*Create new secret key* → copy). OpenAI bills usage to your own account.
+
+   The key is yours; the app doesn't provide one.
 
 ## Privacy
 

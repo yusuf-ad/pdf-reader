@@ -3,7 +3,7 @@ import { IBM_Plex_Sans, Newsreader } from "next/font/google";
 import Script from "next/script";
 import ServiceWorker from "@/components/service-worker";
 import DesktopHint from "@/components/desktop-hint";
-import { THEME_STORAGE_KEY } from "@/lib/theme";
+import { THEME_RENAMES, THEME_STORAGE_KEY } from "@/lib/theme";
 import { langScript } from "@/lib/i18n/lang-script";
 import "./globals.css";
 
@@ -32,7 +32,7 @@ export const viewport: Viewport = {
 };
 
 // Sayfa boyanmadan önce kayıtlı temayı uygula (açılışta parlama olmasın)
-const themeScript = `try{var t=localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)});if(!t&&matchMedia("(prefers-color-scheme: dark)").matches)t="night";document.documentElement.dataset.theme=t||"light"}catch(e){}`;
+const themeScript = `try{var k=${JSON.stringify(THEME_STORAGE_KEY)},m=${JSON.stringify(THEME_RENAMES)},t=localStorage.getItem(k);if(t&&m[t]){t=m[t];localStorage.setItem(k,t)}if(!t&&matchMedia("(prefers-color-scheme: dark)").matches)t="night";document.documentElement.dataset.theme=t||"light"}catch(e){}`;
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
