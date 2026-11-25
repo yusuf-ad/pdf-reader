@@ -7,7 +7,7 @@
 **A calm PDF reader with an AI study partner.**
 Highlight, take notes, ask questions about the page you're on, and turn chapters into quizzes. Your books never leave your browser.
 
-[**Live demo →**](https://YOUR-DEMO-URL.vercel.app) &nbsp;·&nbsp; Bring your own key: [Gemini](https://aistudio.google.com/apikey) or [OpenAI](https://platform.openai.com/api-keys) &nbsp;·&nbsp; English / Türkçe
+[**Live demo →**](https://pdf-reader-brown.vercel.app) &nbsp;·&nbsp; Bring your own key: [Gemini](https://aistudio.google.com/apikey) or [OpenAI](https://platform.openai.com/api-keys) &nbsp;·&nbsp; English / Türkçe
 
 <a href="docs/okuma-promo.mp4"><img src="docs/demo.gif" alt="Okuma: asking a question about the page and getting a grounded answer" width="600" /></a>
 
@@ -44,7 +44,7 @@ Reading a dense book usually means three apps: a PDF viewer, a notes app, and a 
 
 ## Try it in 60 seconds
 
-1. Open the [live demo](https://YOUR-DEMO-URL.vercel.app). A short welcome PDF opens with a few tips. The app opens in Turkish if your browser lists Turkish, otherwise in English; switch any time from the library.
+1. Open the [live demo](https://pdf-reader-brown.vercel.app). A short welcome PDF opens with a few tips. The app opens in Turkish if your browser lists Turkish, otherwise in English; switch any time from the library.
 2. Reading, highlighting and notes work right away; no account, no key.
 3. For AI features, click **Add AI key** in the toolbar, choose your provider and paste your own key:
    - **Gemini:** from [Google AI Studio](https://aistudio.google.com/apikey) (sign in with Google → *Create API key* → copy). Google's free tier is enough to try everything.
