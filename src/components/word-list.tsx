@@ -217,7 +217,7 @@ export default function WordList({
               theme === item.id ? "bg-ink/10 text-ink" : "text-muted hover:text-ink"
             }`}
           >
-            {t(({ light: "wordsThemeLight", sepia: "wordsThemeSepia", baroque: "wordsThemeBaroque", night: "wordsThemeNight", dark: "wordsThemeDark", monokai: "wordsThemeMonokai", ristretto: "wordsThemeRistretto" } as const)[item.id])}
+            {t(({ light: "wordsThemeLight", sepia: "wordsThemeSepia", baroque: "wordsThemeBaroque", night: "wordsThemeNight", dark: "wordsThemeDark", plum: "wordsThemePlum", espresso: "wordsThemeEspresso" } as const)[item.id])}
           </button>
         ))}
       </div>

@@ -91,40 +91,40 @@
   --page-filter: invert(0.87) hue-rotate(180deg) sepia(0.15);
 }
 
-/* Monokai Pro (VS Code temasındaki varsayılan filtre) */
-[data-theme="monokai"] {
+/* Plum: mor-gri, sıcak sarı vurgulu koyu tema */
+[data-theme="plum"] {
   --hl-blend: screen;
   --hl-opacity: 0.28;
   color-scheme: dark;
   --scrim: rgba(0, 0, 0, 0.55);
-  --paper: #221f22;
-  --sheet: #2d2a2e;
-  --ink: #fcfcfa;
-  --muted: #939293;
-  --rule: #403e41;
-  --accent: #ffd866;
-  --mark: rgba(255, 216, 102, 0.28);
+  --paper: #231f25;
+  --sheet: #2e2a31;
+  --ink: #f7f5f0;
+  --muted: #949097;
+  --rule: #423e45;
+  --accent: #f2cf6a;
+  --mark: rgba(242, 207, 106, 0.28);
   --shadow: rgba(0, 0, 0, 0.45);
-  --good: #a9dc76;
-  /* Sayfayı Monokai'nin mor-gri zeminine yaklaştırır */
+  --good: #9fd47c;
+  /* Sayfayı mor-gri zemine yaklaştırır */
   --page-filter: invert(0.83) hue-rotate(180deg) sepia(0.12) hue-rotate(250deg) saturate(1.1);
 }
 
-/* Monokai Pro Ristretto: aynı paletin sıcak, kahve tonlu filtresi */
-[data-theme="ristretto"] {
+/* Espresso: aynı fikrin sıcak, kahve tonlu hali */
+[data-theme="espresso"] {
   --hl-blend: screen;
   --hl-opacity: 0.28;
   color-scheme: dark;
   --scrim: rgba(0, 0, 0, 0.55);
-  --paper: #211c1c;
-  --sheet: #2c2525;
-  --ink: #fff1f3;
-  --muted: #948a8b;
-  --rule: #403838;
-  --accent: #f9cc6c;
-  --mark: rgba(249, 204, 108, 0.28);
+  --paper: #221c1b;
+  --sheet: #2e2624;
+  --ink: #f8ede6;
+  --muted: #978b88;
+  --rule: #433a38;
+  --accent: #efc472;
+  --mark: rgba(239, 196, 114, 0.28);
   --shadow: rgba(0, 0, 0, 0.45);
-  --good: #adda78;
+  --good: #a5cf7f;
   --page-filter: invert(0.83) hue-rotate(180deg) sepia(0.3) hue-rotate(-15deg);
 }
 
